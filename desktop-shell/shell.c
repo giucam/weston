@@ -6162,8 +6162,8 @@ handle_seat_created(struct wl_listener *listener, void *data)
 	create_shell_seat(seat);
 }
 
-WL_EXPORT int
-module_init(struct weston_compositor *ec,
+static int
+shell_init(struct weston_compositor *ec,
 	    int *argc, char *argv[])
 {
 	struct weston_seat *seat;
@@ -6274,4 +6274,46 @@ module_init(struct weston_compositor *ec,
 	shell_fade_init(shell);
 
 	return 0;
+}
+
+/* weston does a lot of stuff that's fine and required in an
+ * application, but bad in a library:
+ *
+ *  - signal handling
+ *
+ *  - sigchild handling conflicts with toolkits (but core doesn't need
+ *    launcing, except for screensaver)
+ *
+ *  - single threaded throughout
+ *
+ *  - automatically detects backend
+ *
+ *  - loads modules
+ *
+ *  - parses a config file
+ *
+ *  - sets WAYLAND_DISPLAY
+ *
+ *  - log file
+ *
+ *  - how does weston-launch work with 10 different binaries?
+ *    weston-launch currently works because weston is a trusted
+ *    binary.
+ */
+
+int main(int argc, char *argv[])
+{
+	struct weston_compositor *compositor;
+
+	compositor = weston_compositor_create(argc, argv);
+	if (compositor == NULL)
+		return EXIT_FAILURE;
+
+	shell_init(compositor, &argc, argv);
+	weston_compositor_wake(compositor);
+	wl_display_run(compositor->wl_display);
+
+	weston_compositor_destroy(compositor);
+
+	return EXIT_SUCCESS;
 }

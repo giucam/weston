@@ -37,15 +37,14 @@ AM_CPPFLAGS = 					\
 
 CLEANFILES = weston.ini $(BUILT_SOURCES)
 
-bin_PROGRAMS += weston
+module_LTLIBRARIES += libweston.la
 
-weston_LDFLAGS = -export-dynamic
-weston_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
-weston_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
-weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
+libweston_la_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
+libweston_la_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
+libweston_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 	$(DLOPEN_LIBS) -lm libshared.la
 
-weston_SOURCES =					\
+libweston_la_SOURCES =					\
 	src/git-version.h				\
 	src/log.c					\
 	src/compositor.c				\
@@ -66,7 +65,7 @@ weston_SOURCES =					\
 	shared/zalloc.h					\
 	src/weston-egl-ext.h
 
-nodist_weston_SOURCES =					\
+nodist_libweston_la_SOURCES =				\
 	protocol/screenshooter-protocol.c		\
 	protocol/screenshooter-server-protocol.h	\
 	protocol/text-cursor-position-protocol.c	\
@@ -80,7 +79,7 @@ nodist_weston_SOURCES =					\
 	protocol/scaler-protocol.c			\
 	protocol/scaler-server-protocol.h
 
-BUILT_SOURCES += $(nodist_weston_SOURCES)
+BUILT_SOURCES += $(nodist_libweston_la_SOURCES)
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
@@ -661,9 +660,9 @@ endif
 
 if ENABLE_DESKTOP_SHELL
 
-module_LTLIBRARIES += desktop-shell.la
+bin_PROGRAMS += weston
 
-desktop_shell_la_CPPFLAGS =			\
+weston_CPPFLAGS =			\
 	-I$(top_builddir)/protocol		\
 	-I$(top_srcdir)/shared			\
 	-I$(top_srcdir)/src			\
@@ -674,21 +673,21 @@ desktop_shell_la_CPPFLAGS =			\
 	-DLIBEXECDIR='"$(libexecdir)"'		\
 	-DIN_WESTON
 
-desktop_shell_la_LDFLAGS = -module -avoid-version
-desktop_shell_la_LIBADD = $(COMPOSITOR_LIBS) libshared.la
-desktop_shell_la_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS)
-desktop_shell_la_SOURCES =				\
+weston_LDFLAGS = -export-dynamic
+weston_LDADD = $(COMPOSITOR_LIBS) libweston.la libshared.la
+weston_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS)
+weston_SOURCES =				\
 	desktop-shell/shell.h				\
 	desktop-shell/shell.c				\
 	desktop-shell/exposay.c				\
 	desktop-shell/input-panel.c
-nodist_desktop_shell_la_SOURCES =			\
+nodist_weston_SOURCES =			\
 	protocol/desktop-shell-protocol.c		\
 	protocol/desktop-shell-server-protocol.h	\
 	protocol/xdg-shell-protocol.c			\
 	protocol/xdg-shell-server-protocol.h
 
-BUILT_SOURCES += $(nodist_desktop_shell_la_SOURCES)
+BUILT_SOURCES += $(nodist_weston_SOURCES)
 endif
 
 if ENABLE_FULLSCREEN_SHELL

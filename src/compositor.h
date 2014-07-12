@@ -1036,6 +1036,10 @@ weston_compositor_pick_view(struct weston_compositor *compositor,
 			    wl_fixed_t x, wl_fixed_t y,
 			    wl_fixed_t *sx, wl_fixed_t *sy);
 
+struct weston_compositor *
+weston_compositor_create(int argc, char *argv[]);
+void
+weston_compositor_destroy(struct weston_compositor *compositor);
 
 struct weston_binding;
 typedef void (*weston_key_binding_handler_t)(struct weston_seat *seat,

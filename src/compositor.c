@@ -4039,7 +4039,6 @@ usage(int error_code)
 		"  -B, --backend=MODULE\tBackend module, one of drm-backend.so,\n"
 		"\t\t\t\tfbdev-backend.so, x11-backend.so or\n"
 		"\t\t\t\twayland-backend.so\n"
-		"  --shell=MODULE\tShell module, defaults to desktop-shell.so\n"
 		"  -S, --socket=NAME\tName of socket to listen on\n"
 		"  -i, --idle-time=SECS\tIdle time in seconds\n"
 		"  --modules\t\tLoad the comma-separated list of modules\n"
@@ -4132,12 +4131,13 @@ handle_primary_client_destroyed(struct wl_listener *listener, void *data)
 	wl_display_terminate(wl_client_get_display(client));
 }
 
-int main(int argc, char *argv[])
+static struct wl_event_source *signals[4];
+
+WL_EXPORT struct weston_compositor *
+weston_compositor_create(int argc, char *argv[])
 {
-	int ret = EXIT_SUCCESS;
 	struct wl_display *display;
 	struct weston_compositor *ec;
-	struct wl_event_source *signals[4];
 	struct wl_event_loop *loop;
 	struct weston_compositor
 		*(*backend_init)(struct wl_display *display,
@@ -4146,8 +4146,6 @@ int main(int argc, char *argv[])
 	int i, fd;
 	char *backend = NULL;
 	char *option_backend = NULL;
-	char *shell = NULL;
-	char *option_shell = NULL;
 	char *modules, *option_modules = NULL;
 	char *log = NULL;
 	char *server_socket = NULL, *end;
@@ -4163,7 +4161,6 @@ int main(int argc, char *argv[])
 
 	const struct weston_option core_options[] = {
 		{ WESTON_OPTION_STRING, "backend", 'B', &option_backend },
-		{ WESTON_OPTION_STRING, "shell", 0, &option_shell },
 		{ WESTON_OPTION_STRING, "socket", 'S', &socket_name },
 		{ WESTON_OPTION_INTEGER, "idle-time", 'i', &idle_time },
 		{ WESTON_OPTION_STRING, "modules", 0, &option_modules },
@@ -4195,6 +4192,15 @@ int main(int argc, char *argv[])
 
 	verify_xdg_runtime_dir();
 
+	/* libweston TODO:
+	 *
+	 * - move wl_display creation to weston_compositor_init
+	 *
+	 * - move config path creation and parsing to weston_compositor_init
+	 *
+	 * - set idle_time, WAYLAND_DISPLAY, add_socket in init
+	 */
+
 	display = wl_display_create();
 
 	loop = wl_display_get_event_loop(display);
@@ -4209,10 +4215,8 @@ int main(int argc, char *argv[])
 	signals[3] = wl_event_loop_add_signal(loop, SIGCHLD, sigchld_handler,
 					      NULL);
 
-	if (!signals[0] || !signals[1] || !signals[2] || !signals[3]) {
-		ret = EXIT_FAILURE;
-		goto out_signals;
-	}
+	if (!signals[0] || !signals[1] || !signals[2] || !signals[3])
+		return NULL;
 
 	if (noconfig == 0)
 		config = weston_config_parse("weston.ini");
@@ -4242,15 +4246,13 @@ int main(int argc, char *argv[])
 	backend_init = weston_load_module(backend, "backend_init");
 	free(backend);
 	if (!backend_init) {
-		ret = EXIT_FAILURE;
-		goto out_signals;
+		return NULL;
 	}
 
 	ec = backend_init(display, &argc, argv, config);
 	if (ec == NULL) {
 		weston_log("fatal: failed to create compositor\n");
-		ret = EXIT_FAILURE;
-		goto out_signals;
+		return NULL;
 	}
 
 	catch_signals();
@@ -4261,34 +4263,18 @@ int main(int argc, char *argv[])
 
 	setenv("WAYLAND_DISPLAY", socket_name, 1);
 
-	if (option_shell)
-		shell = strdup(option_shell);
-	else
-		weston_config_section_get_string(section, "shell", &shell,
-						 "desktop-shell.so");
-
-	if (load_modules(ec, shell, &argc, argv) < 0) {
-		free(shell);
-		goto out;
-	}
-	free(shell);
-
 	weston_config_section_get_string(section, "modules", &modules, "");
-	if (load_modules(ec, modules, &argc, argv) < 0) {
-		free(modules);
-		goto out;
-	}
+	if (load_modules(ec, modules, &argc, argv) < 0)
+		return NULL;
 	free(modules);
 
 	if (load_modules(ec, option_modules, &argc, argv) < 0)
-		goto out;
+		return NULL;
 
 	for (i = 1; i < argc; i++)
 		weston_log("fatal: unhandled option: %s\n", argv[i]);
-	if (argc > 1) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
+	if (argc > 1)
+		return NULL;
 
 	weston_compositor_log_capabilities(ec);
 
@@ -4306,8 +4292,7 @@ int main(int argc, char *argv[])
 		primary_client = wl_client_create(display, fd);
 		if (!primary_client) {
 			weston_log("fatal: failed to add client: %m\n");
-			ret = EXIT_FAILURE;
-			goto out;
+			return NULL;
 		}
 		primary_client_destroyed.notify =
 			handle_primary_client_destroyed;
@@ -4316,16 +4301,18 @@ int main(int argc, char *argv[])
 	} else {
 		if (wl_display_add_socket(display, socket_name)) {
 			weston_log("fatal: failed to add socket: %m\n");
-			ret = EXIT_FAILURE;
-			goto out;
+			return NULL;
 		}
 	}
 
-	weston_compositor_wake(ec);
+	return ec;
+}
 
-	wl_display_run(display);
+WL_EXPORT void
+weston_compositor_destroy(struct weston_compositor *ec)
+{
+	int i;
 
- out:
 	/* prevent further rendering while shutting down */
 	ec->state = WESTON_COMPOSITOR_OFFSCREEN;
 
@@ -4335,14 +4322,11 @@ int main(int argc, char *argv[])
 
 	ec->destroy(ec);
 
-out_signals:
 	for (i = ARRAY_LENGTH(signals) - 1; i >= 0; i--)
 		if (signals[i])
 			wl_event_source_remove(signals[i]);
 
-	wl_display_destroy(display);
+	wl_display_destroy(ec->wl_display);
 
 	weston_log_file_close();
-
-	return ret;
 }
