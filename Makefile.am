@@ -159,15 +159,25 @@ endif
 .FORCE :
 
 if BUILD_WESTON_LAUNCH
-bin_PROGRAMS += weston-launch
-weston_launch_SOURCES = src/weston-launch.c src/weston-launch.h
-weston_launch_CPPFLAGS = -DBINDIR='"$(bindir)"'
-weston_launch_CFLAGS=				\
+lib_LTLIBRARIES += libweston-launcher.la
+libweston_launcher_la_CPPFLAGS = $(AM_CPPFLAGS)
+libweston_launcher_la_LIBADD = $(PAM_LIBS) $(SYSTEMD_LOGIN_LIBS) $(LIBDRM_LIBS)
+libweston_launcher_la_CFLAGS =			\
 	$(GCC_CFLAGS)				\
 	$(PAM_CFLAGS)				\
 	$(SYSTEMD_LOGIN_CFLAGS)			\
 	$(LIBDRM_CFLAGS)
-weston_launch_LDADD = $(PAM_LIBS) $(SYSTEMD_LOGIN_LIBS) $(LIBDRM_LIBS)
+libweston_launcher_la_SOURCES = 		\
+	src/weston-launcher.c		\
+	src/weston-launch.h		\
+	src/weston-launcher.h
+
+bin_PROGRAMS += weston-launch
+weston_launch_SOURCES = src/weston-launch.c
+weston_launch_CPPFLAGS = -DBINDIR='"$(bindir)"' -I$(top_srcdir)/libweston
+weston_launch_CFLAGS=				\
+	$(GCC_CFLAGS)
+weston_launch_LDADD = libweston-launcher.la
 
 if ENABLE_SETUID_INSTALL
 install-exec-hook:
@@ -198,6 +208,7 @@ westoninclude_HEADERS =				\
 	src/timeline-object.h			\
 	src/compositor-x11.h			\
 	src/compositor-drm.h			\
+	src/weston-launcher.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
 	shared/zalloc.h				\
