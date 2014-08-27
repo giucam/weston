@@ -175,7 +175,8 @@ westoninclude_HEADERS =				\
 	src/weston-launcher.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
-	shared/zalloc.h
+	shared/zalloc.h				\
+	xwayland/xwayland.h
 
 if ENABLE_EGL
 module_LTLIBRARIES += gl-renderer.la
@@ -767,6 +768,36 @@ endif
 
 if ENABLE_XWAYLAND
 
+lib_LTLIBRARIES += libweston-xwayland.la
+
+libweston_xwayland_la_CPPFLAGS = \
+	-I$(top_builddir)/protocol		\
+	-I$(top_srcdir)/shared			\
+	-I$(top_srcdir)/src			\
+	-I$(top_builddir)/src			\
+	-I$(top_builddir)/xwayland		\
+	-DDATADIR='"$(datadir)"'		\
+	-DMODULEDIR='"$(moduledir)"'		\
+	-DLIBEXECDIR='"$(libexecdir)"'		\
+	-DXSERVER_PATH='"@XSERVER_PATH@"'
+libweston_xwayland_la_LIBADD =			\
+	$(XWAYLAND_LIBS)		\
+	libweston.la			\
+	$(top_builddir)/libshared-cairo.la
+libweston_xwayland_la_CFLAGS =			\
+	$(GCC_CFLAGS)				\
+	$(COMPOSITOR_CFLAGS)			\
+	$(PIXMAN_CFLAGS)			\
+	$(CAIRO_CFLAGS)
+libweston_xwayland_la_SOURCES =			\
+	xwayland/xwayland.h			\
+	xwayland/window-manager.c		\
+	xwayland/selection.c			\
+	xwayland/dnd.c				\
+	xwayland/launcher.c			\
+	xwayland/hash.c				\
+	xwayland/hash.h
+
 module_LTLIBRARIES += xwayland.la
 
 xwayland_la_CPPFLAGS =				\
@@ -782,21 +813,14 @@ xwayland_la_CPPFLAGS =				\
 
 xwayland_la_LDFLAGS = -module -avoid-version
 xwayland_la_LIBADD =			\
-	$(XWAYLAND_LIBS)		\
-	$(top_builddir)/libshared-cairo.la
+	libweston-xwayland.la
 xwayland_la_CFLAGS =				\
 	$(GCC_CFLAGS)				\
 	$(COMPOSITOR_CFLAGS)			\
 	$(PIXMAN_CFLAGS)			\
 	$(CAIRO_CFLAGS)
 xwayland_la_SOURCES =				\
-	xwayland/xwayland.h			\
-	xwayland/window-manager.c		\
-	xwayland/selection.c			\
-	xwayland/dnd.c				\
-	xwayland/launcher.c			\
-	xwayland/hash.c				\
-	xwayland/hash.h
+	xwayland/xwayland-module.c
 endif
 
 

@@ -20,6 +20,13 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifndef _WESTON_XWAYLAND_H_
+#define _WESTON_XWAYLAND_H_
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #include <wayland-server.h>
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
@@ -42,13 +49,14 @@ struct weston_xserver {
 	int wm_fd;
 	int display;
 	struct wl_event_source *sigusr1_source;
-	struct weston_process process;
+	pid_t pid;
 	struct wl_resource *resource;
 	struct wl_client *client;
 	struct weston_compositor *compositor;
 	struct weston_wm *wm;
-	struct weston_config *config;
 	struct wl_listener destroy_listener;
+
+	pid_t (*spawn_xserver)(struct weston_xserver *wxs);
 };
 
 struct weston_wm {
@@ -151,6 +159,13 @@ struct weston_wm {
 	} atom;
 };
 
+struct weston_xserver *
+weston_xserver_create(struct weston_compositor *c);
+void
+weston_xserver_destroy(struct weston_xserver *wxs);
+void
+weston_xserver_exited(struct weston_xserver *wxs, int status);
+
 void
 dump_property(struct weston_wm *wm, xcb_atom_t property,
 	      xcb_get_property_reply_t *reply);
@@ -177,3 +192,9 @@ weston_wm_handle_dnd_event(struct weston_wm *wm,
 			   xcb_generic_event_t *event);
 void
 weston_wm_dnd_init(struct weston_wm *wm);
+
+#ifdef  __cplusplus
+}
+#endif
+
+#endif

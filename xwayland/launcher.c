@@ -53,97 +53,17 @@ static int
 weston_xserver_handle_event(int listen_fd, uint32_t mask, void *data)
 {
 	struct weston_xserver *wxs = data;
-	char display[8], s[8], abstract_fd[8], unix_fd[8], wm_fd[8];
-	int sv[2], wm[2], fd;
-	char *xserver = NULL;
-	struct weston_config_section *section;
+	wxs->pid = wxs->spawn_xserver(wxs);
 
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
-		weston_log("wl connection socketpair failed\n");
-		return 1;
-	}
-
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, wm) < 0) {
-		weston_log("X wm connection socketpair failed\n");
-		return 1;
-	}
-
-	wxs->process.pid = fork();
-	switch (wxs->process.pid) {
-	case 0:
-		/* SOCK_CLOEXEC closes both ends, so we need to unset
-		 * the flag on the client fd. */
-		fd = dup(sv[1]);
-		if (fd < 0)
-			goto fail;
-		snprintf(s, sizeof s, "%d", fd);
-		setenv("WAYLAND_SOCKET", s, 1);
-
-		snprintf(display, sizeof display, ":%d", wxs->display);
-
-		fd = dup(wxs->abstract_fd);
-		if (fd < 0)
-			goto fail;
-		snprintf(abstract_fd, sizeof abstract_fd, "%d", fd);
-		fd = dup(wxs->unix_fd);
-		if (fd < 0)
-			goto fail;
-		snprintf(unix_fd, sizeof unix_fd, "%d", fd);
-		fd = dup(wm[1]);
-		if (fd < 0)
-			goto fail;
-		snprintf(wm_fd, sizeof wm_fd, "%d", fd);
-
-		section = weston_config_get_section(wxs->config,
-						    "xwayland", NULL, NULL);
-		weston_config_section_get_string(section, "path",
-						 &xserver, XSERVER_PATH);
-
-		/* Ignore SIGUSR1 in the child, which will make the X
-		 * server send SIGUSR1 to the parent (weston) when
-		 * it's done with initialization.  During
-		 * initialization the X server will round trip and
-		 * block on the wayland compositor, so avoid making
-		 * blocking requests (like xcb_connect_to_fd) until
-		 * it's done with that. */
-		signal(SIGUSR1, SIG_IGN);
-
-		if (execl(xserver,
-			  xserver,
-			  display,
-			  "-rootless",
-			  "-listen", abstract_fd,
-			  "-listen", unix_fd,
-			  "-wm", wm_fd,
-			  "-terminate",
-			  NULL) < 0)
-			weston_log("exec of '%s %s -rootless "
-                                   "-listen %s -listen %s -wm %s "
-                                   "-terminate' failed: %m\n",
-                                   xserver, display,
-                                   abstract_fd, unix_fd, wm_fd);
-	fail:
-		_exit(EXIT_FAILURE);
-
-	default:
-		weston_log("forked X server, pid %d\n", wxs->process.pid);
-
-		close(sv[1]);
-		wxs->client = wl_client_create(wxs->wl_display, sv[0]);
-
-		close(wm[1]);
-		wxs->wm_fd = wm[0];
-
-		weston_watch_process(&wxs->process);
-
-		wl_event_source_remove(wxs->abstract_source);
-		wl_event_source_remove(wxs->unix_source);
-		break;
-
-	case -1:
+	if (wxs->pid == -1) {
 		weston_log( "failed to fork\n");
-		break;
+		return -1;
 	}
+
+	weston_log("forked X server, pid %d\n", wxs->pid);
+
+	wl_event_source_remove(wxs->abstract_source);
+	wl_event_source_remove(wxs->unix_source);
 
 	return 1;
 }
@@ -157,7 +77,7 @@ weston_xserver_shutdown(struct weston_xserver *wxs)
 	unlink(path);
 	snprintf(path, sizeof path, "/tmp/.X11-unix/X%d", wxs->display);
 	unlink(path);
-	if (wxs->process.pid == 0) {
+	if (wxs->pid == 0) {
 		wl_event_source_remove(wxs->abstract_source);
 		wl_event_source_remove(wxs->unix_source);
 	}
@@ -170,13 +90,10 @@ weston_xserver_shutdown(struct weston_xserver *wxs)
 	wxs->loop = NULL;
 }
 
-static void
-weston_xserver_cleanup(struct weston_process *process, int status)
+WL_EXPORT void
+weston_xserver_exited(struct weston_xserver *wxs, int status)
 {
-	struct weston_xserver *wxs =
-		container_of(process, struct weston_xserver, process);
-
-	wxs->process.pid = 0;
+	wxs->pid = 0;
 	wxs->client = NULL;
 	wxs->resource = NULL;
 
@@ -329,41 +246,23 @@ create_lockfile(int display, char *lockfile, size_t lsize)
 	return 0;
 }
 
-static void
-weston_xserver_destroy(struct wl_listener *l, void *data)
+WL_EXPORT struct weston_xserver *
+weston_xserver_create(struct weston_compositor *c)
 {
-	struct weston_xserver *wxs =
-		container_of(l, struct weston_xserver, destroy_listener);
-
-	if (!wxs)
-		return;
-
-	if (wxs->loop)
-		weston_xserver_shutdown(wxs);
-
-	free(wxs);
-}
-
-WL_EXPORT int
-module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[],
-	    struct weston_config *config)
-
-{
-	struct wl_display *display = compositor->wl_display;
+	struct wl_display *display = c->wl_display;
 	struct weston_xserver *wxs;
 	char lockfile[256], display_name[8];
 
 	wxs = zalloc(sizeof *wxs);
 	if (wxs == NULL)
-		return -1;
-	wxs->process.cleanup = weston_xserver_cleanup;
+		return NULL;
 	wxs->wl_display = display;
-	wxs->compositor = compositor;
+	wxs->compositor = c;
+	wxs->spawn_xserver = NULL;
 
 	wxs->display = 0;
 
- retry:
+retry:
 	if (create_lockfile(wxs->display, lockfile, sizeof lockfile) < 0) {
 		if (errno == EAGAIN) {
 			goto retry;
@@ -372,7 +271,7 @@ module_init(struct weston_compositor *compositor,
 			goto retry;
 		} else {
 			free(wxs);
-			return -1;
+			return NULL;
 		}
 	}
 
@@ -388,14 +287,13 @@ module_init(struct weston_compositor *compositor,
 		unlink(lockfile);
 		close(wxs->abstract_fd);
 		free(wxs);
-		return -1;
+		return NULL;
 	}
 
 	snprintf(display_name, sizeof display_name, ":%d", wxs->display);
 	weston_log("xserver listening on display %s\n", display_name);
 	setenv("DISPLAY", display_name, 1);
 
-	wxs->config = config;
 	wxs->loop = wl_display_get_event_loop(display);
 	wxs->abstract_source =
 		wl_event_loop_add_fd(wxs->loop, wxs->abstract_fd,
@@ -408,8 +306,15 @@ module_init(struct weston_compositor *compositor,
 
 	wxs->sigusr1_source = wl_event_loop_add_signal(wxs->loop, SIGUSR1,
 						       handle_sigusr1, wxs);
-	wxs->destroy_listener.notify = weston_xserver_destroy;
-	wl_signal_add(&compositor->destroy_signal, &wxs->destroy_listener);
 
-	return 0;
+	return wxs;
+}
+
+WL_EXPORT void
+weston_xserver_destroy(struct weston_xserver *wxs)
+{
+	if (wxs->loop)
+		weston_xserver_shutdown(wxs);
+
+	free(wxs);
 }
