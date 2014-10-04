@@ -1357,7 +1357,10 @@ int
 tty_activate_vt(struct tty *tty, int vt);
 
 void
-screenshooter_create(struct weston_compositor *ec);
+weston_recorder_start(struct weston_compositor *ec,
+		      struct weston_output *output);
+void
+weston_recorder_stop(struct weston_compositor *ec);
 
 enum weston_screenshooter_outcome {
 	WESTON_SCREENSHOOTER_SUCCESS,

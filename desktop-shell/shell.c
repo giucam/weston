@@ -6595,8 +6595,6 @@ module_init(struct weston_compositor *ec,
 	shell->seat_create_listener.notify = handle_seat_created;
 	wl_signal_add(&ec->seat_created_signal, &shell->seat_create_listener);
 
-	screenshooter_create(ec);
-
 	shell_add_bindings(ec, shell);
 
 	shell_fade_init(shell);
