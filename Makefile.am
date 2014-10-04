@@ -96,8 +96,6 @@ libweston_@ABI_VERSION@_la_SOURCES =			\
 	src/weston-egl-ext.h
 
 nodist_libweston_@ABI_VERSION@_la_SOURCES =		\
-	protocol/screenshooter-protocol.c		\
-	protocol/screenshooter-server-protocol.h	\
 	protocol/text-cursor-position-protocol.c	\
 	protocol/text-cursor-position-server-protocol.h	\
 	protocol/text-protocol.c			\
@@ -124,6 +122,7 @@ weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 
 weston_SOURCES =					\
 	src/main.c					\
+	src/weston.h					\
 	src/compositor-x11.h				\
 	src/compositor-wayland.h			\
 	src/compositor-drm.h				\
@@ -132,6 +131,12 @@ weston_SOURCES =					\
 	src/compositor-rdp.h				\
 	src/compositor-rpi.h				\
 	shared/helpers.h
+
+nodist_weston_SOURCES =					\
+	protocol/screenshooter-protocol.c		\
+	protocol/screenshooter-server-protocol.h
+
+BUILT_SOURCES += $(nodist_weston_SOURCES)
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
