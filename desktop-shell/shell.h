@@ -118,6 +118,7 @@ struct shell_output {
 
 struct desktop_shell {
 	struct weston_compositor *compositor;
+	struct weston_config *config;
 
 	struct wl_listener idle_listener;
 	struct wl_listener wake_listener;

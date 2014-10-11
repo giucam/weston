@@ -101,6 +101,9 @@ struct rpi_backend {
 	struct wl_listener session_listener;
 
 	int single_buffer;
+
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_rpi_backend_input_device_config *config);
 };
 
 static inline struct rpi_output *
@@ -456,6 +459,18 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
 }
 
+static void
+rpi_configure_device(struct weston_compositor *compositor,
+		     struct weston_libinput_device_config *config)
+{
+	struct rpi_backend *b = (struct rpi_backend *)compositor->backend;
+	struct weston_rpi_backend_input_device_config c = {
+		.enable_tap = config->enable_tap,
+	};
+	b->configure_input_device(compositor, &c);
+	config->enable_tap = c.enable_tap;
+}
+
 static struct rpi_backend *
 rpi_backend_create(struct weston_compositor *compositor,
 		   struct weston_rpi_backend_config *config)
@@ -496,6 +511,7 @@ rpi_backend_create(struct weston_compositor *compositor,
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->single_buffer = config->single_buffer;
+	backend->configure_input_device = config->configure_input_device;
 
 	weston_log("Dispmanx planes are %s buffered.\n",
 		   backend->single_buffer ? "single" : "double");
@@ -522,6 +538,7 @@ rpi_backend_create(struct weston_compositor *compositor,
 	if (rpi_output_create(backend, config->output_transform) < 0)
 		goto out_renderer;
 
+	backend->input.configure_device = rpi_configure_device;
 	if (udev_input_init(&backend->input,
 			    compositor,
 			    backend->udev, "seat0") != 0) {

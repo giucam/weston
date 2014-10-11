@@ -39,11 +39,17 @@ struct udev_seat {
 	struct wl_listener output_create_listener;
 };
 
+struct weston_libinput_device_config {
+	bool enable_tap;
+};
+
 struct udev_input {
 	struct libinput *libinput;
 	struct wl_event_source *libinput_source;
 	struct weston_compositor *compositor;
 	int suspended;
+	void (*configure_device)(struct weston_compositor *compositor,
+				 struct weston_libinput_device_config *config);
 };
 
 int

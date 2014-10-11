@@ -1018,13 +1018,14 @@ handle_seat_created(struct wl_listener *listener, void *data)
 }
 
 static void
-text_backend_configuration(struct text_backend *text_backend)
+text_backend_configuration(struct text_backend *text_backend,
+			   struct weston_config *config)
 {
 	struct weston_config_section *section;
 	char *client;
 	int ret;
 
-	section = weston_config_get_section(text_backend->compositor->config,
+	section = weston_config_get_section(config,
 					    "input-method", NULL, NULL);
 	ret = asprintf(&client, "%s/weston-keyboard",
 		       weston_config_get_libexec_dir());
@@ -1047,7 +1048,8 @@ text_backend_destroy(struct text_backend *text_backend)
 }
 
 WL_EXPORT struct text_backend *
-text_backend_init(struct weston_compositor *ec)
+text_backend_init(struct weston_compositor *ec,
+	    struct weston_config *config)
 {
 	struct text_backend *text_backend;
 	struct weston_seat *seat;
@@ -1058,7 +1060,7 @@ text_backend_init(struct weston_compositor *ec)
 
 	text_backend->compositor = ec;
 
-	text_backend_configuration(text_backend);
+	text_backend_configuration(text_backend, config);
 
 	wl_list_for_each(seat, &ec->seat_list, link)
 		text_backend_seat_created(text_backend, seat);

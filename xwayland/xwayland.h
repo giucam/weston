@@ -50,6 +50,7 @@ struct weston_xserver {
 	struct wl_client *client;
 	struct weston_compositor *compositor;
 	struct weston_wm *wm;
+	struct weston_config *config;
 	struct wl_listener destroy_listener;
 };
 

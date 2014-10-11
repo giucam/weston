@@ -129,6 +129,8 @@ struct drm_backend {
 				 struct weston_drm_backend_output_config *config,
 				 int (*parse_modeline)(const char *s,
 				   struct weston_drm_backend_modeline *modeline));
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_drm_backend_input_device_config *config);
 };
 
 struct drm_mode {
@@ -2764,6 +2766,18 @@ renderer_switch_binding(struct weston_seat *seat, uint32_t time, uint32_t key,
 	switch_to_gl_renderer(b);
 }
 
+static void
+drm_configure_device(struct weston_compositor *compositor,
+		     struct weston_libinput_device_config *config)
+{
+	struct drm_backend *b = (struct drm_backend *)compositor->backend;
+	struct weston_drm_backend_input_device_config c = {
+		.enable_tap = config->enable_tap,
+	};
+	b->configure_input_device(compositor, &c);
+	config->enable_tap = c.enable_tap;
+}
+
 static struct drm_backend *
 drm_backend_create(struct weston_compositor *compositor,
 		   struct weston_drm_backend_config *config)
@@ -2796,6 +2810,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->use_pixman = config->use_pixman;
 	b->configure_output = config->configure_output;
 	b->option_current_mode = config->default_current_mode;
+	b->configure_input_device = config->configure_input_device;
 
 	if (parse_gbm_format(config->format, GBM_FORMAT_XRGB8888, &b->format) < 0)
 		goto err_compositor;
@@ -2858,6 +2873,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	wl_list_init(&b->sprite_list);
 	create_sprites(b);
 
+	b->input.configure_device = drm_configure_device;
 	if (udev_input_init(&b->input,
 			    compositor, b->udev, seat_id) < 0) {
 		weston_log("failed to create input devices\n");

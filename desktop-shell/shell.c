@@ -610,7 +610,7 @@ shell_configuration(struct desktop_shell *shell)
 	char *s, *client;
 	int ret;
 
-	section = weston_config_get_section(shell->compositor->config,
+	section = weston_config_get_section(shell->config,
 					    "shell", NULL, NULL);
 	ret = asprintf(&client, "%s/%s", weston_config_get_libexec_dir(),
 		       WESTON_SHELL_CLIENT);
@@ -6467,7 +6467,8 @@ handle_seat_created(struct wl_listener *listener, void *data)
 
 WL_EXPORT int
 module_init(struct weston_compositor *ec,
-	    int *argc, char *argv[])
+	    int *argc, char *argv[],
+	    struct weston_config *config)
 {
 	struct weston_seat *seat;
 	struct desktop_shell *shell;
@@ -6480,6 +6481,7 @@ module_init(struct weston_compositor *ec,
 		return -1;
 
 	shell->compositor = ec;
+	shell->config = config;
 
 	shell->destroy_listener.notify = shell_destroy;
 	wl_signal_add(&ec->destroy_signal, &shell->destroy_listener);
@@ -6514,7 +6516,7 @@ module_init(struct weston_compositor *ec,
 	if (input_panel_setup(shell) < 0)
 		return -1;
 
-	shell->text_backend = text_backend_init(ec);
+	shell->text_backend = text_backend_init(ec, config);
 	if (!shell->text_backend)
 		return -1;
 

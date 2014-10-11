@@ -213,12 +213,14 @@ idle_launch_client(void *data)
 int
 controller_module_init(struct weston_compositor *compositor,
 		       int *argc, char *argv[],
+		       struct weston_config *config,
 		       const struct ivi_controller_interface *iface,
 		       size_t iface_version);
 
 WL_EXPORT int
 controller_module_init(struct weston_compositor *compositor,
 		       int *argc, char *argv[],
+		       struct weston_config *config,
 		       const struct ivi_controller_interface *iface,
 		       size_t iface_version)
 {

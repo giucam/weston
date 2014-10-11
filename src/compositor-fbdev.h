@@ -40,6 +40,10 @@ struct weston_fbdev_backend_output_config {
 	struct weston_backend_output_config base;
 };
 
+struct weston_fbdev_backend_input_device_config {
+	bool enable_tap;
+};
+
 struct weston_fbdev_backend_config {
 	struct weston_backend_config base;
 
@@ -49,6 +53,8 @@ struct weston_fbdev_backend_config {
 	void (*configure_output)(struct weston_compositor *compositor,
 				 const char *name,
 				 struct weston_fbdev_backend_output_config *config);
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_fbdev_backend_input_device_config *config);
 };
 
 #ifdef  __cplusplus

@@ -35,6 +35,10 @@ extern "C" {
 
 #include "compositor.h"
 
+struct weston_rpi_backend_input_device_config {
+	bool enable_tap;
+};
+
 struct weston_rpi_backend_config {
 	struct weston_backend_config base;
 
@@ -42,6 +46,8 @@ struct weston_rpi_backend_config {
 	uint32_t output_transform;
 	int single_buffer;
 	int opaque_regions;
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_rpi_backend_input_device_config *config);
 };
 
 #ifdef  __cplusplus

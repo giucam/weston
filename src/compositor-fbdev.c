@@ -64,6 +64,8 @@ struct fbdev_backend {
 	void (*configure_output)(struct weston_compositor *compositor,
 				 const char *name,
 				 struct weston_fbdev_backend_output_config *config);
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_fbdev_backend_input_device_config *config);
 };
 
 struct fbdev_screeninfo {
@@ -803,6 +805,18 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
 }
 
+static void
+fbdev_configure_device(struct weston_compositor *compositor,
+		       struct weston_libinput_device_config *config)
+{
+	struct fbdev_backend *b = (struct fbdev_backend *)compositor->backend;
+	struct weston_fbdev_backend_input_device_config c = {
+		.enable_tap = config->enable_tap,
+	};
+	b->configure_input_device(compositor, &c);
+	config->enable_tap = c.enable_tap;
+}
+
 static struct fbdev_backend *
 fbdev_backend_create(struct weston_compositor *compositor,
                      struct weston_fbdev_backend_config *config)
@@ -848,6 +862,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->use_pixman = !config->use_gl;
 	backend->configure_output = config->configure_output;
+	backend->configure_input_device = config->configure_input_device;
 
 	for (key = KEY_F1; key < KEY_F9; key++)
 		weston_compositor_add_key_binding(compositor, key,
@@ -879,6 +894,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (fbdev_output_create(backend, device) < 0)
 		goto out_pixman;
 
+	backend->input.configure_device = fbdev_configure_device;
 	udev_input_init(&backend->input, compositor, backend->udev, seat_id);
 
 	compositor->backend = &backend->base;

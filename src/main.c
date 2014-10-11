@@ -472,12 +472,13 @@ weston_create_listening_socket(struct wl_display *display, const char *socket_na
 
 static int
 load_modules(struct weston_compositor *ec, const char *modules,
-	     int *argc, char *argv[])
+	     int *argc, char *argv[], struct weston_config *config)
 {
 	const char *p, *end;
 	char buffer[256];
 	int (*module_init)(struct weston_compositor *ec,
-			   int *argc, char *argv[]);
+			   int *argc, char *argv[],
+			   struct weston_config *config);
 
 	if (modules == NULL)
 		return 0;
@@ -489,7 +490,7 @@ load_modules(struct weston_compositor *ec, const char *modules,
 		module_init = weston_load_module(buffer, "module_init");
 		if (!module_init)
 			return -1;
-		if (module_init(ec, argc, argv) < 0)
+		if (module_init(ec, argc, argv, config) < 0)
 			return -1;
 		p = end;
 		while (*p == ',')
@@ -938,6 +939,18 @@ cleanup:
 }
 
 static void
+configure_libinput_device(struct weston_compositor *c, bool *enable_tap)
+{
+	struct weston_config *wc = weston_compositor_get_user_data(c);
+	struct weston_config_section *s;
+
+	s = weston_config_get_section(wc, "libinput", NULL, NULL);
+	weston_config_section_get_bool(s, "enable_tap",
+				       (int *)enable_tap,
+				       *enable_tap);
+}
+
+static void
 drm_configure_output(struct weston_compositor *c, const char *name,
 		     struct weston_drm_backend_output_config *config,
 		     int (*parse_modeline)(const char *s,
@@ -979,6 +992,13 @@ drm_configure_output(struct weston_compositor *c, const char *name,
 	weston_config_section_get_string(section, "seat", &config->seat, "");
 }
 
+static void
+drm_configure_input_device(struct weston_compositor *c,
+			struct weston_drm_backend_input_device_config *config)
+{
+	configure_libinput_device(c, &config->enable_tap);
+}
+
 static int
 init_drm_backend(struct weston_compositor *c, const char *backend,
 		 int *argc, char **argv, struct weston_config *wc)
@@ -991,6 +1011,7 @@ init_drm_backend(struct weston_compositor *c, const char *backend,
 		.tty = 0,
 		.default_current_mode = false,
 		.configure_output = drm_configure_output,
+		.configure_input_device = drm_configure_input_device,
 	};
 	struct weston_config_section *section;
 	char *format = NULL, *seat = NULL;
@@ -1040,6 +1061,13 @@ fbdev_configure_output(struct weston_compositor *c, const char *name,
 	free(s);
 }
 
+static void
+fbdev_configure_input_device(struct weston_compositor *c,
+			struct weston_fbdev_backend_input_device_config *config)
+{
+	configure_libinput_device(c, &config->enable_tap);
+}
+
 static int
 init_fbdev_backend(struct weston_compositor *c, const char *backend,
 		 int *argc, char **argv, struct weston_config *wc)
@@ -1049,6 +1077,7 @@ init_fbdev_backend(struct weston_compositor *c, const char *backend,
 		.device = NULL,
 		.tty = 0,
 		.configure_output = fbdev_configure_output,
+		.configure_input_device = fbdev_configure_input_device,
 	};
 	int ret = 0;
 	char *device = NULL;
@@ -1119,6 +1148,13 @@ cleanup:
 	return ret;
 }
 
+static void
+rpi_configure_input_device(struct weston_compositor *c,
+			struct weston_rpi_backend_input_device_config *config)
+{
+	configure_libinput_device(c, &config->enable_tap);
+}
+
 static int
 init_rpi_backend(struct weston_compositor *c, const char *backend,
 		 int *argc, char **argv, struct weston_config *wc)
@@ -1128,6 +1164,7 @@ init_rpi_backend(struct weston_compositor *c, const char *backend,
 		.single_buffer = false,
 		.opaque_regions = false,
 		.output_transform = WL_OUTPUT_TRANSFORM_NORMAL,
+		.configure_input_device = rpi_configure_input_device,
 	};
 	char *transform = NULL;
 	int ret = 0;
@@ -1307,7 +1344,6 @@ int main(int argc, char *argv[])
 		goto out_signals;
 	}
 
-	ec->config = config;
 	if (weston_compositor_init_config(ec, config) < 0)
 		goto out;
 	if (init_backend(ec, backend, &argc, argv, config) < 0)
@@ -1355,14 +1391,14 @@ int main(int argc, char *argv[])
 		weston_config_section_get_string(section, "shell", &shell,
 						 "desktop-shell.so");
 
-	if (load_modules(ec, shell, &argc, argv) < 0)
+	if (load_modules(ec, shell, &argc, argv, config) < 0)
 		goto out;
 
 	weston_config_section_get_string(section, "modules", &modules, "");
-	if (load_modules(ec, modules, &argc, argv) < 0)
+	if (load_modules(ec, modules, &argc, argv, config) < 0)
 		goto out;
 
-	if (load_modules(ec, option_modules, &argc, argv) < 0)
+	if (load_modules(ec, option_modules, &argc, argv, config) < 0)
 		goto out;
 
 	section = weston_config_get_section(config, "keyboard", NULL, NULL);

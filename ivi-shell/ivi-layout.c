@@ -3068,12 +3068,13 @@ static struct ivi_controller_interface ivi_controller_interface = {
 
 int
 load_controller_modules(struct weston_compositor *compositor, const char *modules,
-			int *argc, char *argv[])
+			int *argc, char *argv[], struct weston_config *config)
 {
 	const char *p, *end;
 	char buffer[256];
 	int (*controller_module_init)(struct weston_compositor *compositor,
 				      int *argc, char *argv[],
+				      struct weston_config *config,
 				      const struct ivi_controller_interface *interface,
 				      size_t interface_version);
 
@@ -3090,6 +3091,7 @@ load_controller_modules(struct weston_compositor *compositor, const char *module
 			return -1;
 
 		if (controller_module_init(compositor, argc, argv,
+					   config,
 					   &ivi_controller_interface,
 				sizeof(struct ivi_controller_interface)) != 0) {
 			weston_log("ivi-shell: Initialization of controller module fails");

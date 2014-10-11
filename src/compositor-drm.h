@@ -54,6 +54,10 @@ struct weston_drm_backend_output_config {
 	struct weston_drm_backend_modeline *modeline;
 };
 
+struct weston_drm_backend_input_device_config {
+	bool enable_tap;
+};
+
 struct weston_drm_backend_config {
 	struct weston_backend_config base;
 
@@ -68,6 +72,8 @@ struct weston_drm_backend_config {
 				 struct weston_drm_backend_output_config *config,
 				 int (*parse_modeline)(const char *s,
 				   struct weston_drm_backend_modeline *modeline));
+	void (*configure_input_device)(struct weston_compositor *compositor,
+			struct weston_drm_backend_input_device_config *config);
 };
 
 #ifdef  __cplusplus

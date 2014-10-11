@@ -385,11 +385,10 @@ init_ivi_shell(struct weston_compositor *compositor, struct ivi_shell *shell,
 
 static int
 ivi_shell_setting_create(struct ivi_shell_setting *dest,
-			 struct weston_compositor *compositor,
+			 struct weston_config *config,
 			 int *argc, char *argv[])
 {
 	int result = 0;
-	struct weston_config *config = compositor->config;
 	struct weston_config_section *section;
 
 	const struct weston_option ivi_shell_options[] = {
@@ -419,7 +418,8 @@ ivi_shell_setting_create(struct ivi_shell_setting *dest,
  */
 WL_EXPORT int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[])
+           int *argc, char *argv[],
+           struct weston_config *config)
 {
 	struct ivi_shell *shell;
 	struct ivi_shell_setting setting = { };
@@ -429,7 +429,7 @@ module_init(struct weston_compositor *compositor,
 	if (shell == NULL)
 		return -1;
 
-	if (ivi_shell_setting_create(&setting, compositor, argc, argv) != 0)
+	if (ivi_shell_setting_create(&setting, config, argc, argv) != 0)
 		return -1;
 
 	init_ivi_shell(compositor, shell, &setting);
@@ -440,7 +440,7 @@ module_init(struct weston_compositor *compositor,
 	if (input_panel_setup(shell) < 0)
 		goto out_settings;
 
-	shell->text_backend = text_backend_init(compositor);
+	shell->text_backend = text_backend_init(compositor, config);
 	if (!shell->text_backend)
 		goto out_settings;
 
@@ -452,8 +452,7 @@ module_init(struct weston_compositor *compositor,
 	ivi_layout_init_with_compositor(compositor);
 
 	/* Call module_init of ivi-modules which are defined in weston.ini */
-	if (load_controller_modules(compositor, setting.ivi_module,
-				    argc, argv) < 0)
+	if (load_controller_modules(compositor, setting.ivi_module, argc, argv, config) < 0)
 		goto out_settings;
 
 	retval = 0;
