@@ -94,6 +94,8 @@ struct fbdev_parameters {
 	int tty;
 	char *device;
 	int use_gl;
+	void (*configure_device)(struct weston_compositor *compositor,
+				 struct libinput_device *device);
 };
 
 struct gl_renderer_interface *gl_renderer;
@@ -930,6 +932,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (fbdev_output_create(backend, param->device) < 0)
 		goto out_pixman;
 
+	backend->input.configure_device = param->configure_device;
 	udev_input_init(&backend->input, compositor, backend->udev, seat_id);
 
 	compositor->backend = &backend->base;
@@ -952,6 +955,14 @@ out_compositor:
 	return NULL;
 }
 
+static struct weston_config *wconfig;
+
+static void
+configure_device(struct weston_compositor *c, struct libinput_device *device)
+{
+	libinput_device_configure(device, wconfig);
+}
+
 WL_EXPORT int
 backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	     struct weston_config *config)
@@ -965,6 +976,8 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 		.use_gl = 0,
 	};
 
+	wconfig = config;
+
 	const struct weston_option fbdev_options[] = {
 		{ WESTON_OPTION_INTEGER, "tty", 0, &param.tty },
 		{ WESTON_OPTION_STRING, "device", 0, &param.device },
@@ -972,6 +985,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	};
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
+	param.configure_device = configure_device;
 
 	b = fbdev_backend_create(compositor, &param);
 	if (b == NULL)

@@ -235,6 +235,8 @@ struct drm_parameters {
 	uint32_t format;
 	void (*get_output_parameters)(const char *name,
 				      struct drm_output_parameters *parameters);
+	void (*configure_device)(struct weston_compositor *compositor,
+				 struct libinput_device *device);
 };
 
 static struct gl_renderer_interface *gl_renderer;
@@ -2731,6 +2733,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	wl_list_init(&b->sprite_list);
 	create_sprites(b);
 
+	b->input.configure_device = param->configure_device;
 	if (udev_input_init(&b->input,
 			    compositor, b->udev, param->seat_id) < 0) {
 		weston_log("failed to create input devices\n");
@@ -2920,6 +2923,12 @@ output_parameters(const char *name, struct drm_output_parameters *params)
 	weston_config_section_get_string(section, "seat", &params->seat, "");
 }
 
+static void
+configure_device(struct weston_compositor *c, struct libinput_device *device)
+{
+	libinput_device_configure(device, wconfig);
+}
+
 WL_EXPORT int
 backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	     struct weston_config *config)
@@ -2942,6 +2951,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 
 	param.seat_id = default_seat;
 	param.get_output_parameters = output_parameters;
+	param.configure_device = configure_device;
 
 	parse_options(drm_options, ARRAY_LENGTH(drm_options), argc, argv);
 

@@ -94,7 +94,7 @@ weston_xserver_handle_event(int listen_fd, uint32_t mask, void *data)
 			goto fail;
 		snprintf(wm_fd, sizeof wm_fd, "%d", fd);
 
-		section = weston_config_get_section(wxs->compositor->config,
+		section = weston_config_get_section(wxs->config,
 						    "xwayland", NULL, NULL);
 		weston_config_section_get_string(section, "path",
 						 &xserver, XSERVER_PATH);
@@ -346,7 +346,8 @@ weston_xserver_destroy(struct wl_listener *l, void *data)
 
 WL_EXPORT int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[])
+	    int *argc, char *argv[],
+	    struct weston_config *config)
 
 {
 	struct wl_display *display = compositor->wl_display;
@@ -394,6 +395,7 @@ module_init(struct weston_compositor *compositor,
 	weston_log("xserver listening on display %s\n", display_name);
 	setenv("DISPLAY", display_name, 1);
 
+	wxs->config = config;
 	wxs->loop = wl_display_get_event_loop(display);
 	wxs->abstract_source =
 		wl_event_loop_add_fd(wxs->loop, wxs->abstract_fd,

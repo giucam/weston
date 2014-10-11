@@ -57,7 +57,8 @@ surface_transform(void *data)
 }
 
 WL_EXPORT int
-module_init(struct weston_compositor *compositor, int *argc, char *argv[])
+module_init(struct weston_compositor *compositor, int *argc, char *argv[],
+	    struct weston_config *config)
 {
 	struct wl_event_loop *loop;
 

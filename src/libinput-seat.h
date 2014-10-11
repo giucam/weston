@@ -36,11 +36,15 @@ struct udev_seat {
 	struct wl_listener output_create_listener;
 };
 
+struct libinput_device;
+
 struct udev_input {
 	struct libinput *libinput;
 	struct wl_event_source *libinput_source;
 	struct weston_compositor *compositor;
 	int suspended;
+	void (*configure_device)(struct weston_compositor *compositor,
+				 struct libinput_device *device);
 };
 
 int
@@ -58,5 +62,9 @@ udev_input_destroy(struct udev_input *input);
 struct udev_seat *
 udev_seat_get_named(struct udev_input *u,
 		    const char *seat_name);
+
+void
+libinput_device_configure(struct libinput_device *device,
+		          struct weston_config *config);
 
 #endif
