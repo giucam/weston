@@ -116,6 +116,7 @@ struct hmi_controller {
 	int32_t                             is_initialized;
 
 	struct weston_compositor           *compositor;
+	struct weston_config               *config;
 	struct wl_listener                  destroy_listener;
 
 	struct wl_client                   *user_interface;
@@ -133,6 +134,7 @@ const struct ivi_controller_interface *ivi_controller_interface;
 int
 controller_module_init(struct weston_compositor *ec,
 		       int *argc, char *argv[],
+		       struct weston_config *config,
 		       const struct ivi_controller_interface *interface,
 		       size_t interface_version);
 
@@ -591,10 +593,9 @@ set_notification_configure_surface(struct ivi_layout_surface *ivisurf,
  * of ivi_layers are initialized in hmi_controller_create
  */
 static struct hmi_server_setting *
-hmi_server_setting_create(struct weston_compositor *ec)
+hmi_server_setting_create(struct weston_config *config)
 {
 	struct hmi_server_setting *setting = MEM_ALLOC(sizeof(*setting));
-	struct weston_config *config = ec->config;
 	struct weston_config_section *shell_section = NULL;
 
 	shell_section = weston_config_get_section(config, "ivi-shell",
@@ -661,7 +662,8 @@ hmi_controller_destroy(struct wl_listener *listener, void *data)
  * ivi_hmi_controller_home is requested.
  */
 static struct hmi_controller *
-hmi_controller_create(struct weston_compositor *ec)
+hmi_controller_create(struct weston_compositor *ec,
+                      struct weston_config *config)
 {
 	struct ivi_layout_screen **pp_screen = NULL;
 	struct ivi_layout_screen *iviscrn  = NULL;
@@ -674,7 +676,7 @@ hmi_controller_create(struct weston_compositor *ec)
 
 	wl_array_init(&hmi_ctrl->ui_widgets);
 	hmi_ctrl->layout_mode = IVI_HMI_CONTROLLER_LAYOUT_MODE_TILING;
-	hmi_ctrl->hmi_setting = hmi_server_setting_create(ec);
+	hmi_ctrl->hmi_setting = hmi_server_setting_create(config);
 	hmi_ctrl->compositor = ec;
 
 	ivi_controller_interface->get_screens(&screen_length, &pp_screen);
@@ -1017,7 +1019,7 @@ ivi_hmi_controller_add_launchers(struct hmi_controller *hmi_ctrl,
 	if (0 == y_count)
 		y_count  = 1;
 
-	config = hmi_ctrl->compositor->config;
+	config = hmi_ctrl->config;
 	if (!config)
 		return;
 
@@ -1687,7 +1689,7 @@ initialize(struct hmi_controller *hmi_ctrl)
 		uint32_t *dest;
 	};
 
-	struct weston_config *config = hmi_ctrl->compositor->config;
+	struct weston_config *config = hmi_ctrl->config;
 	struct weston_config_section *section = NULL;
 	int result = 0;
 	int i = 0;
@@ -1744,6 +1746,7 @@ launch_hmi_client_process(void *data)
 WL_EXPORT int
 controller_module_init(struct weston_compositor *ec,
 		       int *argc, char *argv[],
+		       struct weston_config *config,
 		       const struct ivi_controller_interface *interface,
 		       size_t interface_version)
 {
@@ -1757,7 +1760,7 @@ controller_module_init(struct weston_compositor *ec,
 
 	ivi_controller_interface = interface;
 
-	hmi_ctrl = hmi_controller_create(ec);
+	hmi_ctrl = hmi_controller_create(ec, config);
 
 	if (!initialize(hmi_ctrl)) {
 		return -1;

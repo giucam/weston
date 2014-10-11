@@ -63,6 +63,8 @@ void
 evdev_device_set_output(struct evdev_device *device,
 			struct weston_output *output);
 void
+evdev_device_set_calibration(struct evdev_device *device);
+void
 evdev_device_destroy(struct evdev_device *device);
 
 void

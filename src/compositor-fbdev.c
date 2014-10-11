@@ -104,6 +104,8 @@ struct fbdev_parameters {
 	int use_gl;
 	void (*get_output_parameters)(const char *name,
 			struct fbdev_output_parameters *parameters);
+	void (*configure_device)(struct weston_compositor *compositor,
+			struct libinput_device *device);
 };
 
 struct gl_renderer_interface *gl_renderer;
@@ -880,6 +882,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (fbdev_output_create(backend, param->device) < 0)
 		goto out_pixman;
 
+	backend->input.configure_device = param->configure_device;
 	udev_input_init(&backend->input, compositor, backend->udev, seat_id);
 
 	compositor->backend = &backend->base;
@@ -902,7 +905,6 @@ out_compositor:
 	return NULL;
 }
 
-
 static struct weston_config *wconfig;
 
 static void
@@ -919,6 +921,12 @@ output_parameters(const char *name, struct fbdev_output_parameters *params)
 		weston_log("Invalid transform \"%s\" for output %s\n",
 			   s, name);
 	free(s);
+}
+
+static void
+configure_device(struct weston_compositor *c, struct libinput_device *device)
+{
+	libinput_device_configure(device, wconfig);
 }
 
 WL_EXPORT int
@@ -944,6 +952,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	};
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
+	param.configure_device = configure_device;
 
 	b = fbdev_backend_create(compositor, &param);
 	if (b == NULL)

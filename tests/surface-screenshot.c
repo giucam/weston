@@ -209,10 +209,11 @@ out:
 }
 
 WL_EXPORT int
-module_init(struct weston_compositor *ec,
-	    int *argc, char *argv[])
+module_init(struct weston_compositor *compositor, int *argc, char *argv[],
+	    struct weston_config *config)
 {
-	weston_compositor_add_debug_binding(ec, KEY_H, trigger_binding, ec);
+	weston_compositor_add_debug_binding(compositor, KEY_H,
+	                                    trigger_binding, compositor);
 
 	return 0;
 }

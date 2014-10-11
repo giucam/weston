@@ -609,14 +609,14 @@ shell_configuration(struct desktop_shell *shell)
 	char *s, *client;
 	int ret;
 
-	section = weston_config_get_section(shell->compositor->config,
+	section = weston_config_get_section(shell->config,
 					    "screensaver", NULL, NULL);
 	weston_config_section_get_string(section,
 					 "path", &shell->screensaver.path, NULL);
 	weston_config_section_get_int(section, "duration", &duration, 60);
 	shell->screensaver.duration = duration * 1000;
 
-	section = weston_config_get_section(shell->compositor->config,
+	section = weston_config_get_section(shell->config,
 					    "shell", NULL, NULL);
 	ret = asprintf(&client, "%s/%s", weston_config_get_libexec_dir(),
 		       WESTON_SHELL_CLIENT);
@@ -6629,7 +6629,8 @@ handle_seat_created(struct wl_listener *listener, void *data)
 
 WL_EXPORT int
 module_init(struct weston_compositor *ec,
-	    int *argc, char *argv[])
+	    int *argc, char *argv[],
+	    struct weston_config *config)
 {
 	struct weston_seat *seat;
 	struct desktop_shell *shell;
@@ -6642,6 +6643,7 @@ module_init(struct weston_compositor *ec,
 		return -1;
 
 	shell->compositor = ec;
+	shell->config = config;
 
 	shell->destroy_listener.notify = shell_destroy;
 	wl_signal_add(&ec->destroy_signal, &shell->destroy_listener);

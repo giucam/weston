@@ -32,6 +32,7 @@ struct cms_static {
 	struct weston_compositor	*ec;
 	struct wl_listener		 destroy_listener;
 	struct wl_listener		 output_created_listener;
+	struct weston_config		*config;
 };
 
 static void
@@ -45,7 +46,7 @@ cms_output_created(struct cms_static *cms, struct weston_output *o)
 
 	if (o->name == NULL)
 		return;
-	s = weston_config_get_section(cms->ec->config,
+	s = weston_config_get_section(cms->config,
 				      "output", "name", o->name);
 	if (s == NULL)
 		return;
@@ -86,7 +87,8 @@ cms_notifier_destroy(struct wl_listener *listener, void *data)
 
 WL_EXPORT int
 module_init(struct weston_compositor *ec,
-	    int *argc, char *argv[])
+	    int *argc, char *argv[],
+	    struct weston_config *config)
 {
 	struct cms_static *cms;
 	struct weston_output *output;
@@ -99,6 +101,7 @@ module_init(struct weston_compositor *ec,
 		return -1;
 
 	cms->ec = ec;
+	cms->config = config;
 	cms->destroy_listener.notify = cms_notifier_destroy;
 	wl_signal_add(&ec->destroy_signal, &cms->destroy_listener);
 

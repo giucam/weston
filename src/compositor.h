@@ -620,7 +620,6 @@ struct weston_compositor {
 
 	struct wl_display *wl_display;
 	struct weston_shell_interface shell_interface;
-	struct weston_config *config;
 
 	/* surface signals */
 	struct wl_signal create_surface_signal;
@@ -1468,7 +1467,8 @@ struct clipboard *
 clipboard_create(struct weston_seat *seat);
 
 int
-text_backend_init(struct weston_compositor *ec);
+text_backend_init(struct weston_compositor *ec,
+		  struct weston_config *config);
 
 struct weston_process;
 typedef void (*weston_process_cleanup_func_t)(struct weston_process *process,
@@ -1551,7 +1551,8 @@ backend_init(struct weston_compositor *c,
 	     struct weston_config *config);
 int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[]);
+	    int *argc, char *argv[],
+	    struct weston_config *config);
 
 void
 weston_transformed_coord(int width, int height,

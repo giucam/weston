@@ -455,6 +455,8 @@ struct rpi_parameters {
 	int tty;
 	struct rpi_renderer_parameters renderer;
 	uint32_t output_transform;
+	void (*configure_device)(struct weston_compositor *compositor,
+				 struct libinput_device *device);
 };
 
 static struct rpi_backend *
@@ -519,6 +521,7 @@ rpi_backend_create(struct weston_compositor *compositor,
 	if (rpi_output_create(backend, param->output_transform) < 0)
 		goto out_renderer;
 
+	backend->input.configure_device = param->configure_device;
 	if (udev_input_init(&backend->input,
 			    compositor,
 			    backend->udev, "seat0") != 0) {
@@ -546,6 +549,14 @@ out_compositor:
 	return NULL;
 }
 
+static struct weston_config *wconfig;
+
+static void
+configure_device(struct weston_compositor *c, struct libinput_device *device)
+{
+	libinput_device_configure(device, wconfig);
+}
+
 WL_EXPORT int
 backend_init(struct weston_compositor *compositor,
 	     int *argc, char *argv[],
@@ -553,6 +564,8 @@ backend_init(struct weston_compositor *compositor,
 {
 	const char *transform = "normal";
 	struct rpi_backend *b;
+
+	wconfig = config;
 
 	struct rpi_parameters param = {
 		.tty = 0, /* default to current tty */
@@ -571,6 +584,8 @@ backend_init(struct weston_compositor *compositor,
 	};
 
 	parse_options(rpi_options, ARRAY_LENGTH(rpi_options), argc, argv);
+
+	param.configure_device = configure_device;
 
 	if (weston_parse_transform(transform, &param.output_transform) < 0)
 		weston_log("invalid transform \"%s\"\n", transform);

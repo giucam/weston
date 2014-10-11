@@ -4504,7 +4504,6 @@ weston_compositor_init(struct weston_compositor *ec,
 	struct xkb_rule_names xkb_names;
 	struct weston_config_section *s;
 
-	ec->config = config;
 	wl_signal_init(&ec->destroy_signal);
 	wl_signal_init(&ec->create_surface_signal);
 	wl_signal_init(&ec->activate_signal);
@@ -4555,7 +4554,7 @@ weston_compositor_init(struct weston_compositor *ec,
 	weston_plane_init(&ec->primary_plane, ec, 0, 0);
 	weston_compositor_stack_plane(ec, &ec->primary_plane, NULL);
 
-	s = weston_config_get_section(ec->config, "keyboard", NULL, NULL);
+	s = weston_config_get_section(config, "keyboard", NULL, NULL);
 	weston_config_section_get_string(s, "keymap_rules",
 					 (char **) &xkb_names.rules, NULL);
 	weston_config_section_get_string(s, "keymap_model",
@@ -4575,7 +4574,7 @@ weston_compositor_init(struct weston_compositor *ec,
 	weston_config_section_get_int(s, "repeat-delay",
 				      &ec->kb_repeat_delay, 400);
 
-	text_backend_init(ec);
+	text_backend_init(ec, config);
 
 	wl_data_device_manager_init(ec->wl_display);
 
@@ -4593,7 +4592,7 @@ weston_compositor_init(struct weston_compositor *ec,
 	weston_compositor_add_debug_binding(ec, KEY_T,
 					    timeline_key_binding_handler, ec);
 
-	s = weston_config_get_section(ec->config, "core", NULL, NULL);
+	s = weston_config_get_section(config, "core", NULL, NULL);
 	weston_config_section_get_int(s, "repaint-window", &ec->repaint_msec,
 				      DEFAULT_REPAINT_WINDOW);
 	if (ec->repaint_msec < -10 || ec->repaint_msec > 1000) {
@@ -4634,8 +4633,6 @@ weston_compositor_shutdown(struct weston_compositor *ec)
 	weston_plane_release(&ec->primary_plane);
 
 	wl_event_loop_destroy(ec->input_loop);
-
-	weston_config_destroy(ec->config);
 }
 
 WL_EXPORT void
@@ -4940,12 +4937,13 @@ weston_load_module(const char *name, const char *entrypoint)
 
 static int
 load_modules(struct weston_compositor *ec, const char *modules,
-	     int *argc, char *argv[])
+	     int *argc, char *argv[], struct weston_config *config)
 {
 	const char *p, *end;
 	char buffer[256];
 	int (*module_init)(struct weston_compositor *ec,
-			   int *argc, char *argv[]);
+			   int *argc, char *argv[],
+			   struct weston_config *config);
 
 	if (modules == NULL)
 		return 0;
@@ -4957,7 +4955,7 @@ load_modules(struct weston_compositor *ec, const char *modules,
 		module_init = weston_load_module(buffer, "module_init");
 		if (!module_init)
 			return -1;
-		if (module_init(ec, argc, argv) < 0)
+		if (module_init(ec, argc, argv, config) < 0)
 			return -1;
 		p = end;
 		while (*p == ',')
@@ -5288,7 +5286,7 @@ int main(int argc, char *argv[])
 	int32_t noconfig = 0;
 	int32_t numlock_on;
 	char *config_file = NULL;
-	struct weston_config *config;
+	struct weston_config *config = NULL;
 	struct weston_config_section *section;
 	struct wl_client *primary_client;
 	struct wl_listener primary_client_destroyed;
@@ -5421,14 +5419,14 @@ int main(int argc, char *argv[])
 		weston_config_section_get_string(section, "shell", &shell,
 						 "desktop-shell.so");
 
-	if (load_modules(ec, shell, &argc, argv) < 0)
+	if (load_modules(ec, shell, &argc, argv, config) < 0)
 		goto out;
 
 	weston_config_section_get_string(section, "modules", &modules, "");
-	if (load_modules(ec, modules, &argc, argv) < 0)
+	if (load_modules(ec, modules, &argc, argv, config) < 0)
 		goto out;
 
-	if (load_modules(ec, option_modules, &argc, argv) < 0)
+	if (load_modules(ec, option_modules, &argc, argv, config) < 0)
 		goto out;
 
 	section = weston_config_get_section(config, "keyboard", NULL, NULL);
@@ -5479,6 +5477,8 @@ out_signals:
 
 	weston_log_file_close();
 
+	if (config)
+		weston_config_destroy(config);
 	free(config_file);
 	free(backend);
 	free(shell);

@@ -70,6 +70,9 @@ device_added(struct udev_input *input, struct libinput_device *libinput_device)
 	if (device == NULL)
 		return;
 
+	if (input->configure_device != NULL)
+		input->configure_device(c, device->device);
+	evdev_device_set_calibration(device);
 	udev_seat = (struct udev_seat *) seat;
 	wl_list_insert(udev_seat->devices_list.prev, &device->link);
 
@@ -267,9 +270,9 @@ udev_input_init(struct udev_input *input, struct weston_compositor *c,
 	enum libinput_log_priority priority = LIBINPUT_LOG_PRIORITY_INFO;
 	const char *log_priority = NULL;
 
-	memset(input, 0, sizeof *input);
-
 	input->compositor = c;
+	input->libinput_source = NULL;
+	input->suspended = 0;
 
 	log_priority = getenv("WESTON_LIBINPUT_LOG_PRIORITY");
 
@@ -387,4 +390,26 @@ udev_seat_get_named(struct udev_input *input, const char *seat_name)
 	}
 
 	return udev_seat_create(input, seat_name);
+}
+
+void
+libinput_device_configure(struct libinput_device *device, struct weston_config *config)
+{
+	struct weston_config_section *s;
+	int enable_tap;
+	int enable_tap_default;
+
+	s = weston_config_get_section(config,
+				      "libinput", NULL, NULL);
+
+	if (libinput_device_config_tap_get_finger_count(device) > 0) {
+		enable_tap_default =
+			libinput_device_config_tap_get_default_enabled(
+				device);
+		weston_config_section_get_bool(s, "enable_tap",
+					       &enable_tap,
+					       enable_tap_default);
+		libinput_device_config_tap_set_enabled(device,
+						       enable_tap);
+	}
 }
