@@ -603,9 +603,23 @@ enum weston_capability {
 	WESTON_CAP_VIEW_CLIP_MASK		= 0x0010,
 };
 
+struct weston_backend_output_config {
+	uint32_t transform;
+	int32_t width;
+	int32_t height;
+	int scale;
+};
+
 struct weston_backend {
 	void (*destroy)(struct weston_compositor *ec);
 	void (*restore)(struct weston_compositor *ec);
+	struct weston_output *
+		(*create_output)(struct weston_compositor *ec,
+				 const char *name,
+				 struct weston_backend_output_config *config);
+};
+
+struct weston_backend_config {
 };
 
 struct weston_compositor {
@@ -1344,6 +1358,9 @@ void
 weston_compositor_destroy(struct weston_compositor *ec);
 struct weston_compositor *
 weston_compositor_create(struct wl_display *display, void *user_data);
+int
+weston_compositor_init_backend(struct weston_compositor *c, const char *backend,
+			       struct weston_backend_config *backend_config);
 void
 weston_compositor_exit(struct weston_compositor *ec);
 void *
@@ -1553,8 +1570,7 @@ noop_renderer_init(struct weston_compositor *ec);
 
 int
 backend_init(struct weston_compositor *c,
-	     int *argc, char *argv[],
-	     struct weston_config *config);
+             struct weston_backend_config *config);
 int
 module_init(struct weston_compositor *compositor,
 	    int *argc, char *argv[]);

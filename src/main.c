@@ -47,6 +47,16 @@
 #include "git-version.h"
 #include "version.h"
 
+#include "compositor-wayland.h"
+#include "compositor-x11.h"
+#include "compositor-drm.h"
+#include "compositor-fbdev.h"
+#include "compositor-headless.h"
+#include "compositor-rpi.h"
+#include "compositor-rdp.h"
+
+#define WINDOW_TITLE "Weston Compositor"
+
 static struct wl_list child_process_list;
 static struct weston_compositor *segv_compositor;
 
@@ -629,6 +639,577 @@ handle_exit(struct weston_compositor *c)
 	wl_display_terminate(c->wl_display);
 }
 
+static char *
+create_config_for_output(struct weston_config_section *config_section,
+				 int option_width, int option_height,
+				 int option_scale,
+				 struct weston_backend_output_config *config)
+{
+	char *mode, *t, *name, *str;
+	int width, height, scale;
+	uint32_t transform;
+	unsigned int slen;
+
+	weston_config_section_get_string(config_section, "name", &name, NULL);
+	if (name) {
+		slen = strlen(name);
+		slen += strlen(WINDOW_TITLE " - ");
+		str = malloc(slen + 1);
+		if (str)
+			snprintf(str, slen + 1, WINDOW_TITLE " - %s", name);
+		free(name);
+		name = str;
+	}
+	if (!name)
+		name = strdup(WINDOW_TITLE);
+
+	weston_config_section_get_string(config_section,
+					 "mode", &mode, "1024x600");
+	if (sscanf(mode, "%dx%d", &width, &height) != 2) {
+		weston_log("Invalid mode \"%s\" for output %s\n",
+			   mode, name);
+		width = 1024;
+		height = 640;
+	}
+	free(mode);
+
+	if (option_width)
+		width = option_width;
+	if (option_height)
+		height = option_height;
+
+	weston_config_section_get_int(config_section, "scale", &scale, 1);
+
+	if (option_scale)
+		scale = option_scale;
+
+	weston_config_section_get_string(config_section,
+					 "transform", &t, "normal");
+	if (weston_parse_transform(t, &transform) < 0)
+		weston_log("Invalid transform \"%s\" for output %s\n",
+			   t, name);
+	free(t);
+
+	config->width = width;
+	config->height = height;
+	config->transform = transform;
+	config->scale = scale;
+	return name;
+}
+
+static int
+init_wayland_backend(struct weston_compositor *c, const char *backend,
+		     int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_wayland_backend_config config = {
+		.use_pixman = false,
+		.sprawl = false,
+		.display = NULL,
+		.cursor_size = 32,
+		.cursor_theme = NULL,
+		.window_title = WINDOW_TITLE,
+	};
+	struct weston_config_section *section;
+	int count = 0;
+	int width = 1024, height = 640;
+	int scale = 1;
+	bool fullscreen = false;
+	const char *section_name;
+	char *cursor_theme = NULL;
+	char *display_name = NULL;
+	struct weston_output *output;
+	char *name, *output_name;
+	int x = 0;
+	int i;
+	int output_count = 0;
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "width", 0, &width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &height },
+		{ WESTON_OPTION_INTEGER, "scale", 0, &scale },
+		{ WESTON_OPTION_STRING, "display", 0, &display_name },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+		{ WESTON_OPTION_INTEGER, "output-count", 0, &count },
+		{ WESTON_OPTION_BOOLEAN, "fullscreen", 0, &fullscreen },
+		{ WESTON_OPTION_BOOLEAN, "sprawl", 0, &config.sprawl },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	section = weston_config_get_section(wc, "shell", NULL, NULL);
+	weston_config_section_get_string(section, "cursor-theme",
+					 &cursor_theme,
+					 cursor_theme);
+	weston_config_section_get_int(section, "cursor-size",
+				      &config.cursor_size, config.cursor_size);
+
+	config.cursor_theme = cursor_theme;
+	config.display = display_name;
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0) {
+		ret = -1;
+		goto cleanup;
+	}
+
+	if (!c->backend->create_output) {
+		ret = -1;
+		goto cleanup;
+	}
+
+	if (fullscreen) {
+		struct weston_wayland_backend_output_config output_config = {
+			.base.width = width,
+			.base.height = height,
+			.base.scale = scale,
+			.base.transform = WL_OUTPUT_TRANSFORM_NORMAL,
+			.fullscreen = true,
+		};
+		output = c->backend->create_output(c, NULL, &output_config.base);
+		goto cleanup;
+	}
+
+	section = NULL;
+	while (weston_config_next_section(wc,
+					  &section, &section_name)) {
+		if (strcmp(section_name, "output") != 0)
+			continue;
+		weston_config_section_get_string(section, "name", &name, NULL);
+		if (name == NULL)
+			continue;
+
+		if (name[0] == 'W' && name[1] == 'L') {
+			struct weston_wayland_backend_output_config output_config;
+			output_name = create_config_for_output(section, width,
+							height, scale,
+							&output_config.base);
+			output_config.fullscreen = false;
+			output = c->backend->create_output(c, name,
+							   &output_config.base);
+			free(output_name);
+		} else {
+			free(name);
+			continue;
+		}
+		free(name);
+
+		if (!output) {
+			ret = -1;
+			goto cleanup;
+		}
+
+		weston_output_move(output, x, 0);
+		x = pixman_region32_extents(&output->region)->x2;
+
+		output_count++;
+		if (count && output_count >= count)
+			break;
+	}
+
+	if (!count)
+		count = 1;
+	for (i = output_count; i < count; i++) {
+		struct weston_wayland_backend_output_config output_config = {
+			.base.width = width,
+			.base.height = height,
+			.base.scale = scale,
+			.base.transform = WL_OUTPUT_TRANSFORM_NORMAL,
+			.fullscreen = false,
+		};
+		output = c->backend->create_output(c, NULL, &output_config.base);
+		if (output == NULL) {
+			ret = -1;
+			goto cleanup;
+		}
+		weston_output_move(output, x, 0);
+		x = pixman_region32_extents(&output->region)->x2;
+	}
+
+cleanup:
+	free(cursor_theme);
+	free(display_name);
+	return ret;
+}
+
+static int
+init_x11_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_x11_backend_config config = {
+		.use_pixman = false,
+		.no_input = false,
+	};
+	struct weston_config_section *section;
+	int count = 0;
+	int width = 640, height = 480;
+	int scale = 1;
+	bool fullscreen = false;
+	const char *section_name;
+	struct weston_output *output;
+	char *name, *output_name;
+	int x = 0;
+	int i;
+	int output_count = 0;
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "width", 0, &width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &height },
+		{ WESTON_OPTION_INTEGER, "scale", 0, &scale },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+		{ WESTON_OPTION_INTEGER, "output-count", 0, &count },
+		{ WESTON_OPTION_BOOLEAN, "fullscreen", 0, &fullscreen },
+		{ WESTON_OPTION_BOOLEAN, "no-input", 0, &config.no_input },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0) {
+		ret = -1;
+		goto cleanup;
+	}
+
+	if (!c->backend->create_output) {
+		ret = -1;
+		goto cleanup;
+	}
+
+	section = NULL;
+	while (weston_config_next_section(wc,
+					  &section, &section_name)) {
+		if (strcmp(section_name, "output") != 0)
+			continue;
+		weston_config_section_get_string(section, "name", &name, NULL);
+		if (name == NULL)
+			continue;
+
+		if (name[0] == 'X') {
+			struct weston_x11_backend_output_config output_config;
+			output_name = create_config_for_output(section, width,
+							height, scale,
+							&output_config.base);
+			output_config.fullscreen = false;
+			output = c->backend->create_output(c, name,
+							   &output_config.base);
+			free(output_name);
+		} else {
+			free(name);
+			continue;
+		}
+		free(name);
+
+		if (!output) {
+			weston_log("Failed to create configured x11 output\n");
+			ret = -1;
+			goto cleanup;
+		}
+
+		weston_output_move(output, x, 0);
+		x = pixman_region32_extents(&output->region)->x2;
+
+		output_count++;
+		if (count && output_count >= count)
+			break;
+	}
+
+	if (!count)
+		count = 1;
+	for (i = output_count; i < count; i++) {
+		struct weston_x11_backend_output_config output_config = {
+			.base.width = width,
+			.base.height = height,
+			.base.scale = scale,
+			.base.transform = WL_OUTPUT_TRANSFORM_NORMAL,
+			.fullscreen = false,
+		};
+		output = c->backend->create_output(c, NULL,
+						   &output_config.base);
+		if (output == NULL) {
+			weston_log("Failed to create x11 output #%d\n", i);
+			ret = -1;
+			goto cleanup;
+		}
+		weston_output_move(output, x, 0);
+		x = pixman_region32_extents(&output->region)->x2;
+	}
+
+cleanup:
+	return ret;
+}
+
+static void
+drm_configure_output(struct weston_compositor *c, const char *name,
+		     struct weston_drm_backend_output_config *config,
+		     int (*parse_modeline)(const char *s,
+				struct weston_drm_backend_modeline *modeline))
+{
+	struct weston_config *wc = weston_compositor_get_user_data(c);
+	struct weston_config_section *section;
+	char *s;
+
+	section = weston_config_get_section(wc, "output", "name", name);
+	weston_config_section_get_string(section, "mode", &s, "preferred");
+	if (strcmp(s, "off") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_OFF;
+	else if (strcmp(s, "preferred") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_PREFERRED;
+	else if (strcmp(s, "current") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_CURRENT;
+	else if (sscanf(s, "%dx%d", &config->base.width,
+				    &config->base.height) == 2)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_MODE;
+	else if (parse_modeline(s, config->modeline) == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_MODELINE;
+	else {
+		weston_log("Invalid mode \"%s\" for output %s\n",
+			   s, name);
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_PREFERRED;
+	}
+	free(s);
+
+	weston_config_section_get_int(section, "scale", &config->base.scale, 1);
+	weston_config_section_get_string(section, "transform", &s, "normal");
+	if (weston_parse_transform(s, &config->base.transform) < 0)
+		weston_log("Invalid transform \"%s\" for output %s\n",
+			   s, name);
+	free(s);
+
+	weston_config_section_get_string(section,
+					 "gbm-format", &config->format, NULL);
+	weston_config_section_get_string(section, "seat", &config->seat, "");
+}
+
+static int
+init_drm_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_drm_backend_config config = {
+		.use_pixman = false,
+		.connector = 0,
+		.seat_id = NULL,
+		.format = NULL,
+		.tty = 0,
+		.default_current_mode = false,
+		.configure_output = drm_configure_output,
+	};
+	struct weston_config_section *section;
+	char *format = NULL, *seat = NULL;
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "connector", 0, &config.connector },
+		{ WESTON_OPTION_STRING, "seat", 0, &seat },
+		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
+		{ WESTON_OPTION_BOOLEAN, "current-mode", 0,
+					 &config.default_current_mode },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	section = weston_config_get_section(wc, "core", NULL, NULL);
+	weston_config_section_get_string(section,
+					 "gbm-format", &format,
+					 format);
+	config.format = format;
+	config.seat_id = seat;
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0)
+		ret = -1;
+
+	free(seat);
+	free(format);
+	return ret;
+}
+
+static void
+fbdev_configure_output(struct weston_compositor *c, const char *name,
+		       struct weston_fbdev_backend_output_config *config)
+{
+	struct weston_config *wc = weston_compositor_get_user_data(c);
+	struct weston_config_section *section;
+	char *s;
+
+	section = weston_config_get_section(wc,
+					    "output", "name",
+					    name);
+	weston_config_section_get_string(section, "transform", &s, "normal");
+	if (weston_parse_transform(s, &config->base.transform) < 0)
+		weston_log("Invalid transform \"%s\" for output %s\n",
+			   s, name);
+	free(s);
+}
+
+static int
+init_fbdev_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_fbdev_backend_config config = {
+		.use_gl = false,
+		.device = NULL,
+		.tty = 0,
+		.configure_output = fbdev_configure_output,
+	};
+	int ret = 0;
+	char *device = NULL;
+
+	/* TODO: Ideally, available frame buffers should be enumerated using
+	 * udev, rather than passing a device node in as a parameter. */
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
+		{ WESTON_OPTION_STRING, "device", 0, &device },
+		{ WESTON_OPTION_BOOLEAN, "use-gl", 0, &config.use_gl },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	config.device = device;
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0)
+		ret = -1;
+
+	free(device);
+	return ret;
+}
+
+static int
+init_headless_backend(struct weston_compositor *c, const char *backend,
+		     int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_headless_backend_config config = {
+		.use_pixman = false,
+	};
+	int ret = 0;
+	int width = 0;
+	int height = 0;
+	char *transform = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "width", 0, &width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &height },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+		{ WESTON_OPTION_STRING, "transform", 0, &transform },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0) {
+		ret = -1;
+		goto cleanup;
+	}
+
+	if (c->backend->create_output) {
+		struct weston_backend_output_config output_config;
+		output_config.width = width ? width: 1024;
+		output_config.height = height ? height : 640;
+		output_config.transform = WL_OUTPUT_TRANSFORM_NORMAL;
+		if (transform &&
+		    weston_parse_transform(transform, &output_config.transform) < 0)
+			weston_log("Invalid transform \"%s\"\n", transform);
+
+		if (!c->backend->create_output(c, "headless", &output_config))
+			ret = -1;
+	} else {
+		ret = -1;
+	}
+
+cleanup:
+	free(transform);
+
+	return ret;
+}
+
+static int
+init_rpi_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_rpi_backend_config config = {
+		.tty = 0,
+		.single_buffer = false,
+		.opaque_regions = false,
+		.output_transform = WL_OUTPUT_TRANSFORM_NORMAL,
+	};
+	char *transform = NULL;
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
+		{ WESTON_OPTION_BOOLEAN, "single-buffer", 0, &config.single_buffer },
+		{ WESTON_OPTION_STRING, "transform", 0, &transform },
+		{ WESTON_OPTION_BOOLEAN, "opaque-regions", 0, &config.opaque_regions },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	if (transform &&
+	    weston_parse_transform(transform, &config.output_transform) < 0)
+		weston_log("Invalid transform \"%s\"\n", transform);
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0)
+		ret = -1;
+
+	free(transform);
+	return ret;
+}
+
+static int
+init_rdp_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_rdp_backend_config config = {
+		.width = 640,
+		.height = 480,
+		.bind_address = NULL,
+		.port = 3389,
+		.rdp_key = NULL,
+		.server_cert = NULL,
+		.server_key = NULL,
+		.env_socket = 0,
+		.no_clients_resize = 0,
+	};
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_BOOLEAN, "env-socket", 0, &config.env_socket },
+		{ WESTON_OPTION_INTEGER, "width", 0, &config.width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &config.height },
+		{ WESTON_OPTION_STRING,  "address", 0, &config.bind_address },
+		{ WESTON_OPTION_INTEGER, "port", 0, &config.port },
+		{ WESTON_OPTION_BOOLEAN, "no-clients-resize", 0, &config.no_clients_resize },
+		{ WESTON_OPTION_STRING,  "rdp4-key", 0, &config.rdp_key },
+		{ WESTON_OPTION_STRING,  "rdp-tls-cert", 0, &config.server_cert },
+		{ WESTON_OPTION_STRING,  "rdp-tls-key", 0, &config.server_key }
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	if (weston_compositor_init_backend(c, backend, &config.base) < 0)
+		ret = -1;
+	return ret;
+}
+
+static int
+init_backend(struct weston_compositor *compositor, const char *backend,
+	     int *argc, char **argv, struct weston_config *config)
+{
+	if (strstr(backend, "wayland-backend.so"))
+		return init_wayland_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "x11-backend.so"))
+		return init_x11_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "drm-backend.so"))
+		return init_drm_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "fbdev-backend.so"))
+		return init_fbdev_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "headless-backend.so"))
+		return init_headless_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "rpi-backend.so"))
+		return init_rpi_backend(compositor, backend, argc, argv, config);
+	else if (strstr(backend, "rdp-backend.so"))
+		return init_rdp_backend(compositor, backend, argc, argv, config);
+
+	return -1;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = EXIT_FAILURE;
@@ -636,9 +1217,6 @@ int main(int argc, char *argv[])
 	struct weston_compositor *ec;
 	struct wl_event_source *signals[4];
 	struct wl_event_loop *loop;
-	int (*backend_init)(struct weston_compositor *c,
-			    int *argc, char *argv[],
-			    struct weston_config *config);
 	int i, fd;
 	char *backend = NULL;
 	char *shell = NULL;
@@ -723,11 +1301,7 @@ int main(int argc, char *argv[])
 			backend = weston_choose_default_backend();
 	}
 
-	backend_init = weston_load_module(backend, "backend_init");
-	if (!backend_init)
-		goto out_signals;
-
-	ec = weston_compositor_create(display, NULL);
+	ec = weston_compositor_create(display, config);
 	if (ec == NULL) {
 		weston_log("fatal: failed to create compositor\n");
 		goto out_signals;
@@ -735,12 +1309,9 @@ int main(int argc, char *argv[])
 
 	ec->config = config;
 	if (weston_compositor_init_config(ec, config) < 0)
-		goto out_signals;
-
-	if (backend_init(ec, &argc, argv, config) < 0) {
-		weston_log("fatal: failed to create compositor backend\n");
-		goto out_signals;
-	}
+		goto out;
+	if (init_backend(ec, backend, &argc, argv, config) < 0)
+		goto out;
 
 	catch_signals();
 	segv_compositor = ec;

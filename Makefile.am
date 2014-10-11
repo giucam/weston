@@ -72,6 +72,13 @@ weston_SOURCES =					\
 	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
+	src/compositor-x11.h				\
+	src/compositor-wayland.h			\
+	src/compositor-drm.h				\
+	src/compositor-headless.h			\
+	src/compositor-fbdev.h				\
+	src/compositor-rdp.h				\
+	src/compositor-rpi.h				\
 	src/input.c					\
 	src/data-device.c				\
 	src/screenshooter.c				\
@@ -188,6 +195,13 @@ westonincludedir = $(includedir)/weston
 westoninclude_HEADERS =				\
 	src/version.h				\
 	src/compositor.h			\
+	src/compositor-x11.h			\
+	src/compositor-wayland.h		\
+	src/compositor-drm.h			\
+	src/compositor-headless.h		\
+	src/compositor-fbdev.h			\
+	src/compositor-rdp.h			\
+	src/compositor-rpi.h			\
 	src/timeline-object.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
@@ -224,6 +238,7 @@ x11_backend_la_CFLAGS =				\
 	$(AM_CFLAGS)
 x11_backend_la_SOURCES = 			\
 	src/compositor-x11.c			\
+	src/compositor-x11.h			\
 	shared/helpers.h
 endif
 
@@ -251,6 +266,7 @@ drm_backend_la_CFLAGS =				\
 	$(AM_CFLAGS)
 drm_backend_la_SOURCES =			\
 	src/compositor-drm.c			\
+	src/compositor-drm.h			\
 	$(INPUT_BACKEND_SOURCES)		\
 	shared/helpers.h			\
 	src/libbacklight.c			\
@@ -279,6 +295,7 @@ wayland_backend_la_CFLAGS =			\
 	$(AM_CFLAGS)
 wayland_backend_la_SOURCES = 			\
 	src/compositor-wayland.c		\
+	src/compositor-wayland.h		\
 	shared/helpers.h
 nodist_wayland_backend_la_SOURCES =			\
 	protocol/fullscreen-shell-protocol.c		\
@@ -306,6 +323,7 @@ rpi_backend_la_CFLAGS =				\
 	$(RPI_BCM_HOST_CFLAGS)
 rpi_backend_la_SOURCES =			\
 	src/compositor-rpi.c			\
+	src/compositor-rpi.h			\
 	src/rpi-renderer.c			\
 	src/rpi-renderer.h			\
 	src/rpi-bcm-stubs.h			\
@@ -326,6 +344,7 @@ headless_backend_la_LIBADD = $(COMPOSITOR_LIBS) libshared.la
 headless_backend_la_CFLAGS = $(COMPOSITOR_CFLAGS) $(AM_CFLAGS)
 headless_backend_la_SOURCES = 			\
 	src/compositor-headless.c		\
+	src/compositor-headless.h		\
 	shared/helpers.h
 endif
 
@@ -346,6 +365,7 @@ fbdev_backend_la_CFLAGS =			\
 	$(AM_CFLAGS)
 fbdev_backend_la_SOURCES =			\
 	src/compositor-fbdev.c			\
+	src/compositor-fbdev.h			\
 	shared/helpers.h			\
 	$(INPUT_BACKEND_SOURCES)
 endif
@@ -362,6 +382,7 @@ rdp_backend_la_CFLAGS =				\
 	$(AM_CFLAGS)
 rdp_backend_la_SOURCES = 			\
 	src/compositor-rdp.c			\
+	src/compositor-rdp.h			\
 	shared/helpers.h
 endif
 

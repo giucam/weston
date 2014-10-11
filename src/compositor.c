@@ -4544,6 +4544,43 @@ fail:
 	return NULL;
 }
 
+/** Init the backend for the given compositor.
+ *
+ * This function loads the passed \c backend with the given
+ * config on the given compositor. Returns 0 on success, -1
+ * on failure.
+ * \c backend can either be a full path to the backend plugin
+ * or a relative one, in which case the path is resolved
+ * based on libweston's install prefix.
+ * The backend configuration object must be a pointer to an
+ * object whose type is a backend specific subclass of
+ * ::weston_backend_config.
+ * After this function returns \c backend_config can be safely
+ * freed.
+ *
+ * \param c The compositor to load the backend on.
+ * \param backend The backend plugin to load.
+ * \param backend_config The configuration struct for the backend.
+ *
+ * \memberof weston_compositor
+ */
+WL_EXPORT int
+weston_compositor_init_backend(struct weston_compositor *c, const char *backend,
+			       struct weston_backend_config *backend_config)
+{
+	int (*backend_init)(struct weston_compositor *c,
+			    struct weston_backend_config *config);
+
+	backend_init = weston_load_module(backend,
+					  "backend_init");
+	if (!backend_init || backend_init(c, backend_config) < 0) {
+		weston_log("fatal: failed to create compositor backend\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 WL_EXPORT void
 weston_compositor_shutdown(struct weston_compositor *ec)
 {
@@ -4734,7 +4771,8 @@ weston_compositor_destroy(struct weston_compositor *compositor)
 
 	weston_compositor_xkb_destroy(compositor);
 
-	compositor->backend->destroy(compositor);
+	if (compositor->backend)
+		compositor->backend->destroy(compositor);
 	free(compositor);
 }
 

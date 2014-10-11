@@ -49,6 +49,7 @@
 #include "shared/helpers.h"
 #include "libbacklight.h"
 #include "compositor.h"
+#include "compositor-drm.h"
 #include "gl-renderer.h"
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
@@ -72,15 +73,8 @@
 #define GBM_BO_USE_CURSOR GBM_BO_USE_CURSOR_64X64
 #endif
 
-static int option_current_mode = 0;
-
-enum output_config {
-	OUTPUT_CONFIG_INVALID = 0,
-	OUTPUT_CONFIG_OFF,
-	OUTPUT_CONFIG_PREFERRED,
-	OUTPUT_CONFIG_CURRENT,
-	OUTPUT_CONFIG_MODE,
-	OUTPUT_CONFIG_MODELINE
+struct weston_drm_backend_modeline {
+	drmModeModeInfo mode;
 };
 
 struct drm_backend {
@@ -105,6 +99,7 @@ struct drm_backend {
 	uint32_t connector_allocator;
 	struct wl_listener session_listener;
 	uint32_t format;
+	bool option_current_mode;
 
 	/* we need these parameters in order to not fail drmModeAddFB2()
 	 * due to out of bounds dimensions, and then mistakenly set
@@ -128,6 +123,12 @@ struct drm_backend {
 
 	uint32_t cursor_width;
 	uint32_t cursor_height;
+
+	void (*configure_output)(struct weston_compositor *compositor,
+				 const char *name,
+				 struct weston_drm_backend_output_config *config,
+				 int (*parse_modeline)(const char *s,
+				   struct weston_drm_backend_modeline *modeline));
 };
 
 struct drm_mode {
@@ -214,13 +215,6 @@ struct drm_sprite {
 	uint32_t dest_w, dest_h;
 
 	uint32_t formats[];
-};
-
-struct drm_parameters {
-	int connector;
-	int tty;
-	int use_pixman;
-	const char *seat_id;
 };
 
 static struct gl_renderer_interface *gl_renderer;
@@ -1890,8 +1884,9 @@ find_and_parse_output_edid(struct drm_backend *b,
 
 
 static int
-parse_modeline(const char *s, drmModeModeInfo *mode)
+parse_modeline(const char *s, struct weston_drm_backend_modeline *modeline)
 {
+	drmModeModeInfo *mode = &modeline->mode;
 	char hsync[16];
 	char vsync[16];
 	float fclock;
@@ -1952,15 +1947,9 @@ setup_output_seat_constraint(struct drm_backend *b,
 }
 
 static int
-get_gbm_format_from_section(struct weston_config_section *section,
-			    uint32_t default_value,
-			    uint32_t *format)
+parse_gbm_format(const char *s, uint32_t default_value, uint32_t *format)
 {
-	char *s;
 	int ret = 0;
-
-	weston_config_section_get_string(section,
-					 "gbm-format", &s, NULL);
 
 	if (s == NULL)
 		*format = default_value;
@@ -1975,8 +1964,6 @@ get_gbm_format_from_section(struct weston_config_section *section,
 		ret = -1;
 	}
 
-	free(s);
-
 	return ret;
 }
 
@@ -1989,15 +1976,14 @@ create_output_for_connector(struct drm_backend *b,
 	struct drm_output *output;
 	struct drm_mode *drm_mode, *next, *preferred, *current, *configured, *best;
 	struct weston_mode *m;
-	struct weston_config_section *section;
 	drmModeEncoder *encoder;
-	drmModeModeInfo crtc_mode, modeline;
+	drmModeModeInfo crtc_mode;
 	drmModeCrtc *crtc;
-	int i, width, height, scale;
-	char name[32], *s;
+	int i;
+	char name[32];
 	const char *type_name;
-	enum output_config config;
-	uint32_t transform;
+	struct weston_drm_backend_modeline modeline;
+	struct weston_drm_backend_output_config config = { 0 };
 
 	i = find_crtc_for_connector(b, resources, connector);
 	if (i < 0) {
@@ -2022,42 +2008,15 @@ create_output_for_connector(struct drm_backend *b,
 	snprintf(name, 32, "%s%d", type_name, connector->connector_type_id);
 	output->base.name = strdup(name);
 
-	section = weston_config_get_section(b->compositor->config, "output", "name",
-					    output->base.name);
-	weston_config_section_get_string(section, "mode", &s, "preferred");
-	if (strcmp(s, "off") == 0)
-		config = OUTPUT_CONFIG_OFF;
-	else if (strcmp(s, "preferred") == 0)
-		config = OUTPUT_CONFIG_PREFERRED;
-	else if (strcmp(s, "current") == 0)
-		config = OUTPUT_CONFIG_CURRENT;
-	else if (sscanf(s, "%dx%d", &width, &height) == 2)
-		config = OUTPUT_CONFIG_MODE;
-	else if (parse_modeline(s, &modeline) == 0)
-		config = OUTPUT_CONFIG_MODELINE;
-	else {
-		weston_log("Invalid mode \"%s\" for output %s\n",
-			   s, output->base.name);
-		config = OUTPUT_CONFIG_PREFERRED;
-	}
-	free(s);
-
-	weston_config_section_get_int(section, "scale", &scale, 1);
-	weston_config_section_get_string(section, "transform", &s, "normal");
-	if (weston_parse_transform(s, &transform) < 0)
-		weston_log("Invalid transform \"%s\" for output %s\n",
-			   s, output->base.name);
-
-	free(s);
-
-	if (get_gbm_format_from_section(section,
-					b->format,
-					&output->format) == -1)
+	config.modeline = &modeline;
+	b->configure_output(b->compositor, output->base.name,
+			    &config, &parse_modeline);
+	if (parse_gbm_format(config.format, b->format, &output->format) == -1)
 		output->format = b->format;
 
-	weston_config_section_get_string(section, "seat", &s, "");
-	setup_output_seat_constraint(b, &output->base, s);
-	free(s);
+	setup_output_seat_constraint(b, &output->base,
+				     config.seat ? config.seat : "");
+	free(config.seat);
 
 	output->crtc_id = resources->crtcs[i];
 	output->pipe = i;
@@ -2088,7 +2047,7 @@ create_output_for_connector(struct drm_backend *b,
 			goto err_free;
 	}
 
-	if (config == OUTPUT_CONFIG_OFF) {
+	if (config.type == WESTON_DRM_BACKEND_OUTPUT_TYPE_OFF) {
 		weston_log("Disabling output %s\n", output->base.name);
 		drmModeSetCrtc(b->drm.fd, output->crtc_id,
 			       0, 0, 0, 0, 0, NULL);
@@ -2101,9 +2060,9 @@ create_output_for_connector(struct drm_backend *b,
 	best = NULL;
 
 	wl_list_for_each_reverse(drm_mode, &output->base.mode_list, base.link) {
-		if (config == OUTPUT_CONFIG_MODE &&
-		    width == drm_mode->base.width &&
-		    height == drm_mode->base.height)
+		if (config.type == WESTON_DRM_BACKEND_OUTPUT_TYPE_MODE &&
+		    config.base.width == drm_mode->base.width &&
+		    config.base.height == drm_mode->base.height)
 			configured = drm_mode;
 		if (!memcmp(&crtc_mode, &drm_mode->mode_info, sizeof crtc_mode))
 			current = drm_mode;
@@ -2112,8 +2071,8 @@ create_output_for_connector(struct drm_backend *b,
 		best = drm_mode;
 	}
 
-	if (config == OUTPUT_CONFIG_MODELINE) {
-		configured = drm_output_add_mode(output, &modeline);
+	if (config.type == WESTON_DRM_BACKEND_OUTPUT_TYPE_MODELINE) {
+		configured = drm_output_add_mode(output, &config.modeline->mode);
 		if (!configured)
 			goto err_free;
 	}
@@ -2124,10 +2083,10 @@ create_output_for_connector(struct drm_backend *b,
 			goto err_free;
 	}
 
-	if (config == OUTPUT_CONFIG_CURRENT)
+	if (config.type == WESTON_DRM_BACKEND_OUTPUT_TYPE_CURRENT)
 		configured = current;
 
-	if (option_current_mode && current)
+	if (b->option_current_mode && current)
 		output->base.current_mode = &current->base;
 	else if (configured)
 		output->base.current_mode = &configured->base;
@@ -2147,7 +2106,7 @@ create_output_for_connector(struct drm_backend *b,
 
 	weston_output_init(&output->base, b->compositor, x, y,
 			   connector->mmWidth, connector->mmHeight,
-			   transform, scale);
+			   config.base.transform, config.base.scale);
 
 	if (b->use_pixman) {
 		if (drm_output_init_pixman(output, b) < 0) {
@@ -2807,16 +2766,14 @@ renderer_switch_binding(struct weston_seat *seat, uint32_t time, uint32_t key,
 
 static struct drm_backend *
 drm_backend_create(struct weston_compositor *compositor,
-		      struct drm_parameters *param,
-		      int *argc, char *argv[],
-		      struct weston_config *config)
+		   struct weston_drm_backend_config *config)
 {
 	struct drm_backend *b;
-	struct weston_config_section *section;
 	struct udev_device *drm_device;
 	struct wl_event_loop *loop;
 	const char *path;
 	uint32_t key;
+	const char *seat_id = default_seat;
 
 	weston_log("initializing drm backend\n");
 
@@ -2836,18 +2793,18 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->sprites_are_broken = 1;
 	b->cursors_are_broken = 1;
 	b->compositor = compositor;
+	b->use_pixman = config->use_pixman;
+	b->configure_output = config->configure_output;
+	b->option_current_mode = config->default_current_mode;
 
-	section = weston_config_get_section(config, "core", NULL, NULL);
-	if (get_gbm_format_from_section(section,
-					GBM_FORMAT_XRGB8888,
-					&b->format) == -1)
-		goto err_base;
+	if (parse_gbm_format(config->format, GBM_FORMAT_XRGB8888, &b->format) < 0)
+		goto err_compositor;
 
-	b->use_pixman = param->use_pixman;
-
+	if (config->seat_id)
+		seat_id = config->seat_id;
 	/* Check if we run drm-backend using weston-launch */
-	compositor->launcher = weston_launcher_connect(compositor, param->tty,
-						       param->seat_id, true);
+	compositor->launcher = weston_launcher_connect(compositor, config->tty,
+						       seat_id, true);
 	if (compositor->launcher == NULL) {
 		weston_log("fatal: drm backend should be run "
 			   "using weston-launch binary or as root\n");
@@ -2863,7 +2820,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->session_listener.notify = session_notify;
 	wl_signal_add(&compositor->session_signal, &b->session_listener);
 
-	drm_device = find_primary_gpu(b, param->seat_id);
+	drm_device = find_primary_gpu(b, seat_id);
 	if (drm_device == NULL) {
 		weston_log("no drm device found\n");
 		goto err_udev;
@@ -2889,6 +2846,7 @@ drm_backend_create(struct weston_compositor *compositor,
 
 	b->base.destroy = drm_destroy;
 	b->base.restore = drm_restore;
+	b->base.create_output = NULL;
 
 	b->prev_state = WESTON_COMPOSITOR_ACTIVE;
 
@@ -2901,12 +2859,12 @@ drm_backend_create(struct weston_compositor *compositor,
 	create_sprites(b);
 
 	if (udev_input_init(&b->input,
-			    compositor, b->udev, param->seat_id) < 0) {
+			    compositor, b->udev, seat_id) < 0) {
 		weston_log("failed to create input devices\n");
 		goto err_sprite;
 	}
 
-	if (create_outputs(b, param->connector, drm_device) < 0) {
+	if (create_outputs(b, config->connector, drm_device) < 0) {
 		weston_log("failed to create output for %s\n", path);
 		goto err_udev_input;
 	}
@@ -2975,31 +2933,20 @@ err_udev:
 	udev_unref(b->udev);
 err_compositor:
 	weston_compositor_shutdown(compositor);
-err_base:
+
 	free(b);
 	return NULL;
 }
 
 WL_EXPORT int
-backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
-	     struct weston_config *config)
+backend_init(struct weston_compositor *compositor,
+	     struct weston_backend_config *base)
 {
 	struct drm_backend *b;
-	struct drm_parameters param = { 0, };
+	struct weston_drm_backend_config *config =
+				(struct weston_drm_backend_config *)base;
 
-	const struct weston_option drm_options[] = {
-		{ WESTON_OPTION_INTEGER, "connector", 0, &param.connector },
-		{ WESTON_OPTION_STRING, "seat", 0, &param.seat_id },
-		{ WESTON_OPTION_INTEGER, "tty", 0, &param.tty },
-		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &option_current_mode },
-		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &param.use_pixman },
-	};
-
-	param.seat_id = default_seat;
-
-	parse_options(drm_options, ARRAY_LENGTH(drm_options), argc, argv);
-
-	b = drm_backend_create(compositor, &param, argc, argv, config);
+	b = drm_backend_create(compositor, config);
 	if (b == NULL)
 		return -1;
 	return 0;

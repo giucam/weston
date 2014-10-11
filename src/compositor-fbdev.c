@@ -44,6 +44,7 @@
 
 #include "shared/helpers.h"
 #include "compositor.h"
+#include "compositor-fbdev.h"
 #include "launcher-util.h"
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
@@ -59,6 +60,10 @@ struct fbdev_backend {
 	struct udev_input input;
 	int use_pixman;
 	struct wl_listener session_listener;
+
+	void (*configure_output)(struct weston_compositor *compositor,
+				 const char *name,
+				 struct weston_fbdev_backend_output_config *config);
 };
 
 struct fbdev_screeninfo {
@@ -93,12 +98,6 @@ struct fbdev_output {
 	pixman_image_t *shadow_surface;
 	void *shadow_buf;
 	uint8_t depth;
-};
-
-struct fbdev_parameters {
-	int tty;
-	char *device;
-	int use_gl;
 };
 
 struct gl_renderer_interface *gl_renderer;
@@ -486,13 +485,12 @@ fbdev_output_create(struct fbdev_backend *backend,
                     const char *device)
 {
 	struct fbdev_output *output;
-	struct weston_config_section *section;
 	int fb_fd;
 	int width, height;
 	unsigned int bytes_per_pixel;
 	struct wl_event_loop *loop;
 	uint32_t config_transform;
-	char *s;
+	struct weston_fbdev_backend_output_config config = { 0 };
 
 	weston_log("Creating fbdev output.\n");
 
@@ -537,14 +535,9 @@ fbdev_output_create(struct fbdev_backend *backend,
 	output->base.model = output->fb_info.id;
 	output->base.name = strdup("fbdev");
 
-	section = weston_config_get_section(backend->compositor->config,
-					    "output", "name",
-					    output->base.name);
-	weston_config_section_get_string(section, "transform", &s, "normal");
-	if (weston_parse_transform(s, &config_transform) < 0)
-		weston_log("Invalid transform \"%s\" for output %s\n",
-			   s, output->base.name);
-	free(s);
+	backend->configure_output(backend->compositor,
+				  output->base.name, &config);
+	config_transform = config.base.transform;
 
 	weston_output_init(&output->base, backend->compositor,
 	                   0, 0, output->fb_info.width_mm,
@@ -811,12 +804,12 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 }
 
 static struct fbdev_backend *
-fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv[],
-                     struct weston_config *config,
-                     struct fbdev_parameters *param)
+fbdev_backend_create(struct weston_compositor *compositor,
+                     struct weston_fbdev_backend_config *config)
 {
 	struct fbdev_backend *backend;
 	const char *seat_id = default_seat;
+	const char *device = "/dev/fb0";
 	uint32_t key;
 
 	weston_log("initializing fbdev backend\n");
@@ -841,7 +834,7 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 	wl_signal_add(&compositor->session_signal,
 		      &backend->session_listener);
 	compositor->launcher =
-		weston_launcher_connect(compositor, param->tty, "seat0", false);
+		weston_launcher_connect(compositor, config->tty, "seat0", false);
 	if (!compositor->launcher) {
 		weston_log("fatal: fbdev backend should be run "
 			   "using weston-launch binary or as root\n");
@@ -850,9 +843,11 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 
 	backend->base.destroy = fbdev_backend_destroy;
 	backend->base.restore = fbdev_restore;
+	backend->base.create_output = NULL;
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
-	backend->use_pixman = !param->use_gl;
+	backend->use_pixman = !config->use_gl;
+	backend->configure_output = config->configure_output;
 
 	for (key = KEY_F1; key < KEY_F9; key++)
 		weston_compositor_add_key_binding(compositor, key,
@@ -879,7 +874,9 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 		}
 	}
 
-	if (fbdev_output_create(backend, param->device) < 0)
+	if (config->device)
+		device = config->device;
+	if (fbdev_output_create(backend, device) < 0)
 		goto out_pixman;
 
 	udev_input_init(&backend->input, compositor, backend->udev, seat_id);
@@ -904,27 +901,14 @@ out_compositor:
 }
 
 WL_EXPORT int
-backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
-	     struct weston_config *config)
+backend_init(struct weston_compositor *compositor,
+	     struct weston_backend_config *base)
 {
+	struct weston_fbdev_backend_config *config =
+				(struct weston_fbdev_backend_config *)base;
 	struct fbdev_backend *b;
-	/* TODO: Ideally, available frame buffers should be enumerated using
-	 * udev, rather than passing a device node in as a parameter. */
-	struct fbdev_parameters param = {
-		.tty = 0, /* default to current tty */
-		.device = "/dev/fb0", /* default frame buffer */
-		.use_gl = 0,
-	};
 
-	const struct weston_option fbdev_options[] = {
-		{ WESTON_OPTION_INTEGER, "tty", 0, &param.tty },
-		{ WESTON_OPTION_STRING, "device", 0, &param.device },
-		{ WESTON_OPTION_BOOLEAN, "use-gl", 0, &param.use_gl },
-	};
-
-	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
-
-	b = fbdev_backend_create(compositor, argc, argv, config, &param);
+	b = fbdev_backend_create(compositor, config);
 	if (b == NULL)
 		return -1;
 	return 0;

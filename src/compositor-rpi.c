@@ -48,6 +48,7 @@
 
 #include "shared/helpers.h"
 #include "compositor.h"
+#include "compositor-rpi.h"
 #include "rpi-renderer.h"
 #include "launcher-util.h"
 #include "libinput-seat.h"
@@ -455,17 +456,12 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
 }
 
-struct rpi_parameters {
-	int tty;
-	struct rpi_renderer_parameters renderer;
-	uint32_t output_transform;
-};
-
 static struct rpi_backend *
 rpi_backend_create(struct weston_compositor *compositor,
-		   struct rpi_parameters *param)
+		   struct weston_rpi_backend_config *config)
 {
 	struct rpi_backend *backend;
+	struct rpi_renderer_parameters renderer_params;
 	uint32_t key;
 
 	weston_log("initializing Raspberry Pi backend\n");
@@ -488,7 +484,7 @@ rpi_backend_create(struct weston_compositor *compositor,
 	wl_signal_add(&compositor->session_signal,
 		      &backend->session_listener);
 	compositor->launcher =
-		weston_launcher_connect(compositor, param->tty, "seat0", false);
+		weston_launcher_connect(compositor, config->tty, "seat0", false);
 	if (!compositor->launcher) {
 		weston_log("Failed to initialize tty.\n");
 		goto out_udev;
@@ -496,9 +492,10 @@ rpi_backend_create(struct weston_compositor *compositor,
 
 	backend->base.destroy = rpi_backend_destroy;
 	backend->base.restore = rpi_restore;
+	backend->base.create_output = NULL;
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
-	backend->single_buffer = param->renderer.single_buffer;
+	backend->single_buffer = config->single_buffer;
 
 	weston_log("Dispmanx planes are %s buffered.\n",
 		   backend->single_buffer ? "single" : "double");
@@ -517,10 +514,12 @@ rpi_backend_create(struct weston_compositor *compositor,
 	 */
 	bcm_host_init();
 
-	if (rpi_renderer_create(compositor, &param->renderer) < 0)
+	renderer_params.single_buffer = config->single_buffer;
+	renderer_params.opaque_regions = config->opaque_regions;
+	if (rpi_renderer_create(compositor, &renderer_params) < 0)
 		goto out_launcher;
 
-	if (rpi_output_create(backend, param->output_transform) < 0)
+	if (rpi_output_create(backend, config->output_transform) < 0)
 		goto out_renderer;
 
 	if (udev_input_init(&backend->input,
@@ -552,34 +551,13 @@ out_compositor:
 
 WL_EXPORT int
 backend_init(struct weston_compositor *compositor,
-	     int *argc, char *argv[],
-	     struct weston_config *config)
+	     struct weston_backend_config *base)
 {
-	const char *transform = "normal";
+	struct weston_rpi_backend_config *config =
+				(struct weston_rpi_backend_config *)base;
 	struct rpi_backend *b;
 
-	struct rpi_parameters param = {
-		.tty = 0, /* default to current tty */
-		.renderer.single_buffer = 0,
-		.output_transform = WL_OUTPUT_TRANSFORM_NORMAL,
-		.renderer.opaque_regions = 0,
-	};
-
-	const struct weston_option rpi_options[] = {
-		{ WESTON_OPTION_INTEGER, "tty", 0, &param.tty },
-		{ WESTON_OPTION_BOOLEAN, "single-buffer", 0,
-		  &param.renderer.single_buffer },
-		{ WESTON_OPTION_STRING, "transform", 0, &transform },
-		{ WESTON_OPTION_BOOLEAN, "opaque-regions", 0,
-		  &param.renderer.opaque_regions },
-	};
-
-	parse_options(rpi_options, ARRAY_LENGTH(rpi_options), argc, argv);
-
-	if (weston_parse_transform(transform, &param.output_transform) < 0)
-		weston_log("invalid transform \"%s\"\n", transform);
-
-	b = rpi_backend_create(compositor, &param);
+	b = rpi_backend_create(compositor, config);
 	if (b == NULL)
 		return -1;
 	return 0;
