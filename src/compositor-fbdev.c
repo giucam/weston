@@ -46,6 +46,10 @@
 #include "gl-renderer.h"
 #include "presentation_timing-server-protocol.h"
 
+struct fbdev_output_parameters {
+	uint32_t transform;
+};
+
 struct fbdev_backend {
 	struct weston_backend base;
 	struct weston_compositor *compositor;
@@ -55,6 +59,9 @@ struct fbdev_backend {
 	struct udev_input input;
 	int use_pixman;
 	struct wl_listener session_listener;
+
+	void (*get_output_parameters)(const char *name,
+				struct fbdev_output_parameters *parameters);
 };
 
 struct fbdev_screeninfo {
@@ -95,6 +102,8 @@ struct fbdev_parameters {
 	int tty;
 	char *device;
 	int use_gl;
+	void (*get_output_parameters)(const char *name,
+			struct fbdev_output_parameters *parameters);
 };
 
 struct gl_renderer_interface *gl_renderer;
@@ -482,13 +491,12 @@ fbdev_output_create(struct fbdev_backend *backend,
                     const char *device)
 {
 	struct fbdev_output *output;
-	struct weston_config_section *section;
 	int fb_fd;
 	int width, height;
 	unsigned int bytes_per_pixel;
 	struct wl_event_loop *loop;
 	uint32_t config_transform;
-	char *s;
+	struct fbdev_output_parameters params = { 0 };
 
 	weston_log("Creating fbdev output.\n");
 
@@ -533,14 +541,8 @@ fbdev_output_create(struct fbdev_backend *backend,
 	output->base.model = output->fb_info.id;
 	output->base.name = strdup("fbdev");
 
-	section = weston_config_get_section(backend->compositor->config,
-					    "output", "name",
-					    output->base.name);
-	weston_config_section_get_string(section, "transform", &s, "normal");
-	if (weston_parse_transform(s, &config_transform) < 0)
-		weston_log("Invalid transform \"%s\" for output %s\n",
-			   s, output->base.name);
-	free(s);
+	backend->get_output_parameters(output->base.name, &params);
+	config_transform = params.transform;
 
 	weston_output_init(&output->base, backend->compositor,
 	                   0, 0, output->fb_info.width_mm,
@@ -807,8 +809,7 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 }
 
 static struct fbdev_backend *
-fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv[],
-                     struct weston_config *config,
+fbdev_backend_create(struct weston_compositor *compositor,
                      struct fbdev_parameters *param)
 {
 	struct fbdev_backend *backend;
@@ -822,10 +823,6 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 		return NULL;
 
 	backend->compositor = compositor;
-	if (weston_compositor_init(compositor, argc, argv,
-	                           config) < 0)
-		goto out_free;
-
 	if (weston_compositor_set_presentation_clock_software(
 							compositor) < 0)
 		goto out_compositor;
@@ -853,6 +850,7 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->use_pixman = !param->use_gl;
+	backend->get_output_parameters = param->get_output_parameters;
 
 	for (key = KEY_F1; key < KEY_F9; key++)
 		weston_compositor_add_key_binding(compositor, key,
@@ -899,10 +897,28 @@ out_udev:
 out_compositor:
 	weston_compositor_shutdown(compositor);
 
-out_free:
 	free(backend);
 
 	return NULL;
+}
+
+
+static struct weston_config *wconfig;
+
+static void
+output_parameters(const char *name, struct fbdev_output_parameters *params)
+{
+	struct weston_config_section *section;
+	char *s;
+
+	section = weston_config_get_section(wconfig,
+					    "output", "name",
+					    name);
+	weston_config_section_get_string(section, "transform", &s, "normal");
+	if (weston_parse_transform(s, &params->transform) < 0)
+		weston_log("Invalid transform \"%s\" for output %s\n",
+			   s, name);
+	free(s);
 }
 
 WL_EXPORT int
@@ -916,7 +932,10 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 		.tty = 0, /* default to current tty */
 		.device = "/dev/fb0", /* default frame buffer */
 		.use_gl = 0,
+		.get_output_parameters = output_parameters,
 	};
+
+	wconfig = config;
 
 	const struct weston_option fbdev_options[] = {
 		{ WESTON_OPTION_INTEGER, "tty", 0, &param.tty },
@@ -926,7 +945,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
 
-	b = fbdev_backend_create(compositor, argc, argv, config, &param);
+	b = fbdev_backend_create(compositor, &param);
 	if (b == NULL)
 		return -1;
 	return 0;
