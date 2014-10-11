@@ -695,6 +695,8 @@ struct weston_compositor {
 	int32_t repaint_msec;
 
 	int exit_code;
+
+	void (*terminate)(struct weston_compositor *c);
 };
 
 struct weston_buffer {
@@ -1343,9 +1345,12 @@ weston_buffer_reference(struct weston_buffer_reference *ref,
 uint32_t
 weston_compositor_get_time(void);
 
+void
+weston_compositor_destroy(struct weston_compositor *ec);
 int
-weston_compositor_init(struct weston_compositor *ec,
-		       struct weston_config *config);
+weston_compositor_init(struct weston_compositor *ec);
+void
+weston_compositor_terminate(struct weston_compositor *ec);
 int
 weston_compositor_set_presentation_clock(struct weston_compositor *compositor,
 					 clockid_t clk_id);
