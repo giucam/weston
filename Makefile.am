@@ -62,6 +62,7 @@ weston_SOURCES =					\
 	src/noop-renderer.c				\
 	src/pixman-renderer.c				\
 	src/pixman-renderer.h				\
+	src/weston.c					\
 	shared/matrix.c					\
 	shared/matrix.h					\
 	shared/zalloc.h					\
