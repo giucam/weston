@@ -1376,7 +1376,7 @@ input_handle_button(void *data, struct wl_pointer *pointer,
 		}
 
 		if (frame_status(input->output->frame) & FRAME_STATUS_CLOSE)
-			wl_display_terminate(input->backend->compositor->wl_display);
+			weston_compositor_terminate(input->backend->compositor);
 
 		if (frame_status(input->output->frame) & FRAME_STATUS_REPAINT)
 			weston_output_schedule_repaint(&input->output->base);
@@ -1821,7 +1821,7 @@ wayland_backend_handle_event(int fd, uint32_t mask, void *data)
 	int count = 0;
 
 	if ((mask & WL_EVENT_HANGUP) || (mask & WL_EVENT_ERROR)) {
-		wl_display_terminate(b->compositor->wl_display);
+		weston_compositor_terminate(b->compositor);
 		return 0;
 	}
 

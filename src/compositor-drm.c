@@ -2273,7 +2273,7 @@ update_outputs(struct drm_backend *b, struct udev_device *drm_device)
 
 	/* FIXME: handle zero outputs, without terminating */	
 	if (b->connector_allocator == 0)
-		wl_display_terminate(b->compositor->wl_display);
+		weston_compositor_terminate(b->compositor);
 }
 
 static int

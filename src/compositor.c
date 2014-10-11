@@ -4009,12 +4009,9 @@ weston_environment_get_fd(const char *env)
 }
 
 WL_EXPORT int
-weston_compositor_init(struct weston_compositor *ec,
-		       struct weston_config *config)
+weston_compositor_init(struct weston_compositor *ec)
 {
 	struct wl_event_loop *loop;
-	struct xkb_rule_names xkb_names;
-	struct weston_config_section *s;
 
 	wl_signal_init(&ec->destroy_signal);
 	wl_signal_init(&ec->create_surface_signal);
@@ -4066,6 +4063,31 @@ weston_compositor_init(struct weston_compositor *ec,
 	weston_plane_init(&ec->primary_plane, ec, 0, 0);
 	weston_compositor_stack_plane(ec, &ec->primary_plane, NULL);
 
+	wl_data_device_manager_init(ec->wl_display);
+
+	wl_display_init_shm(ec->wl_display);
+
+	loop = wl_display_get_event_loop(ec->wl_display);
+	ec->idle_source = wl_event_loop_add_timer(loop, idle_handler, ec);
+	wl_event_source_timer_update(ec->idle_source, ec->idle_time * 1000);
+
+	ec->input_loop = wl_event_loop_create();
+
+	weston_layer_init(&ec->fade_layer, &ec->layer_list);
+	weston_layer_init(&ec->cursor_layer, &ec->fade_layer.link);
+
+	weston_compositor_schedule_repaint(ec);
+
+	return 0;
+}
+
+static int
+weston_compositor_init_config(struct weston_compositor *ec,
+			      struct weston_config *config)
+{
+	struct xkb_rule_names xkb_names;
+	struct weston_config_section *s;
+
 	s = weston_config_get_section(config, "keyboard", NULL, NULL);
 	weston_config_section_get_string(s, "keymap_rules",
 					 (char **) &xkb_names.rules, NULL);
@@ -4087,21 +4109,6 @@ weston_compositor_init(struct weston_compositor *ec,
 				      &ec->kb_repeat_delay, 400);
 
 	text_backend_init(ec, config);
-
-	wl_data_device_manager_init(ec->wl_display);
-
-	wl_display_init_shm(ec->wl_display);
-
-	loop = wl_display_get_event_loop(ec->wl_display);
-	ec->idle_source = wl_event_loop_add_timer(loop, idle_handler, ec);
-	wl_event_source_timer_update(ec->idle_source, ec->idle_time * 1000);
-
-	ec->input_loop = wl_event_loop_create();
-
-	weston_layer_init(&ec->fade_layer, &ec->layer_list);
-	weston_layer_init(&ec->cursor_layer, &ec->fade_layer.link);
-
-	weston_compositor_schedule_repaint(ec);
 
 	return 0;
 }
@@ -4140,7 +4147,7 @@ weston_compositor_exit_with_code(struct weston_compositor *compositor,
 	if (compositor->exit_code == EXIT_SUCCESS)
 		compositor->exit_code = exit_code;
 
-	wl_display_terminate(compositor->wl_display);
+	weston_compositor_terminate(compositor);
 }
 
 WL_EXPORT void
@@ -4687,6 +4694,11 @@ weston_transform_to_string(uint32_t output_transform)
 	return "<illegal value>";
 }
 
+static void
+handle_terminate(struct weston_compositor *c)
+{
+	wl_display_terminate(c->wl_display);
+}
 
 int main(int argc, char *argv[])
 {
@@ -4801,7 +4813,8 @@ int main(int argc, char *argv[])
 	}
 
 	ec->wl_display = display;
-	if (weston_compositor_init(ec, config) < 0) {
+	if (weston_compositor_init(ec) < 0 ||
+	    weston_compositor_init_config(ec, config) < 0) {
 		ret = EXIT_FAILURE;
 		goto out_signals;
 	}
@@ -4822,6 +4835,7 @@ int main(int argc, char *argv[])
 	ec->idle_time = idle_time;
 	ec->default_pointer_grab = NULL;
 	ec->exit_code = EXIT_SUCCESS;
+	ec->terminate = handle_terminate;
 
 	for (i = 1; i < argc; i++)
 		weston_log("fatal: unhandled option: %s\n", argv[i]);
@@ -4896,15 +4910,7 @@ int main(int argc, char *argv[])
 	ret = ec->exit_code;
 
 out:
-	/* prevent further rendering while shutting down */
-	ec->state = WESTON_COMPOSITOR_OFFSCREEN;
-
-	wl_signal_emit(&ec->destroy_signal, ec);
-
-	weston_compositor_xkb_destroy(ec);
-
-	ec->backend->destroy(ec);
-	free(ec);
+	weston_compositor_destroy(ec);
 
 out_signals:
 	for (i = ARRAY_LENGTH(signals) - 1; i >= 0; i--)
@@ -4924,4 +4930,24 @@ out_signals:
 	free(modules);
 
 	return ret;
+}
+
+WL_EXPORT void
+weston_compositor_destroy(struct weston_compositor *ec)
+{
+	/* prevent further rendering while shutting down */
+	ec->state = WESTON_COMPOSITOR_OFFSCREEN;
+
+	wl_signal_emit(&ec->destroy_signal, ec);
+
+	weston_compositor_xkb_destroy(ec);
+
+	ec->backend->destroy(ec);
+	free(ec);
+}
+
+WL_EXPORT void
+weston_compositor_terminate(struct weston_compositor *ec)
+{
+	ec->terminate(ec);
 }

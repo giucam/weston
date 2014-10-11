@@ -935,7 +935,7 @@ x11_backend_delete_window(struct x11_backend *b, xcb_window_t window)
 	xcb_flush(b->conn);
 
 	if (wl_list_empty(&b->compositor->output_list))
-		wl_display_terminate(b->compositor->wl_display);
+		weston_compositor_terminate(b->compositor);
 }
 
 #ifdef HAVE_XCB_XKB
