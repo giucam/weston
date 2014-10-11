@@ -1449,19 +1449,10 @@ static struct x11_backend *
 x11_backend_create(struct weston_compositor *compositor,
 		   int fullscreen,
 		   int no_input,
-		   int use_pixman,
-		   int *argc, char *argv[],
-		   struct weston_config *config)
+		   int use_pixman)
 {
 	struct x11_backend *b;
-	struct x11_output *output;
-	struct weston_config_section *section;
 	xcb_screen_iterator_t s;
-	int i, x = 0, output_count = 0;
-	int width, height, scale, count;
-	const char *section_name;
-	char *name, *t, *mode;
-	uint32_t transform;
 
 	weston_log("initializing x11 backend\n");
 
@@ -1470,9 +1461,6 @@ x11_backend_create(struct weston_compositor *compositor,
 		return NULL;
 
 	b->compositor = compositor;
-	if (weston_compositor_init(compositor, argc, argv, config) < 0)
-		goto err_free;
-
 	if (weston_compositor_set_presentation_clock_software(compositor) < 0)
 		goto err_free;
 
@@ -1514,6 +1502,60 @@ x11_backend_create(struct weston_compositor *compositor,
 
 	if (x11_input_create(b, no_input) < 0)
 		goto err_renderer;
+
+	b->xcb_source =
+		wl_event_loop_add_fd(compositor->input_loop,
+				     xcb_get_file_descriptor(b->conn),
+				     WL_EVENT_READABLE,
+				     x11_backend_handle_event, b);
+	wl_event_source_check(b->xcb_source);
+
+	compositor->backend = &b->base;
+	return b;
+
+err_renderer:
+	compositor->renderer->destroy(compositor);
+err_xdisplay:
+	XCloseDisplay(b->dpy);
+err_free:
+	free(b);
+	return NULL;
+}
+
+WL_EXPORT int
+backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
+	     struct weston_config *config)
+{
+	struct x11_backend *b;
+	int fullscreen = 0;
+	int no_input = 0;
+	int use_pixman = 0;
+	struct weston_config_section *section;
+	int width, height, scale, count;
+	const char *section_name;
+	int i, x = 0, output_count = 0;
+	char *name, *t, *mode;
+	uint32_t transform;
+	struct x11_output *output;
+
+	const struct weston_option x11_options[] = {
+		{ WESTON_OPTION_INTEGER, "width", 0, &option_width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &option_height },
+		{ WESTON_OPTION_INTEGER, "scale", 0, &option_scale },
+		{ WESTON_OPTION_BOOLEAN, "fullscreen", 'f', &fullscreen },
+		{ WESTON_OPTION_INTEGER, "output-count", 0, &option_count },
+		{ WESTON_OPTION_BOOLEAN, "no-input", 0, &no_input },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &use_pixman },
+	};
+
+	parse_options(x11_options, ARRAY_LENGTH(x11_options), argc, argv);
+
+	b = x11_backend_create(compositor,
+			       fullscreen,
+			       no_input,
+			       use_pixman);
+	if (b == NULL)
+		return -1;
 
 	width = option_width ? option_width : 1024;
 	height = option_height ? option_height : 640;
@@ -1581,54 +1623,9 @@ x11_backend_create(struct weston_compositor *compositor,
 		x = pixman_region32_extents(&output->base.region)->x2;
 	}
 
-	b->xcb_source =
-		wl_event_loop_add_fd(compositor->input_loop,
-				     xcb_get_file_descriptor(b->conn),
-				     WL_EVENT_READABLE,
-				     x11_backend_handle_event, b);
-	wl_event_source_check(b->xcb_source);
-
-	compositor->backend = &b->base;
-	return b;
+	return 0;
 
 err_x11_input:
 	x11_input_destroy(b);
-err_renderer:
-	compositor->renderer->destroy(compositor);
-err_xdisplay:
-	XCloseDisplay(b->dpy);
-err_free:
-	free(b);
-	return NULL;
-}
-
-WL_EXPORT int
-backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
-	     struct weston_config *config)
-{
-	struct x11_backend *b;
-	int fullscreen = 0;
-	int no_input = 0;
-	int use_pixman = 0;
-
-	const struct weston_option x11_options[] = {
-		{ WESTON_OPTION_INTEGER, "width", 0, &option_width },
-		{ WESTON_OPTION_INTEGER, "height", 0, &option_height },
-		{ WESTON_OPTION_INTEGER, "scale", 0, &option_scale },
-		{ WESTON_OPTION_BOOLEAN, "fullscreen", 'f', &fullscreen },
-		{ WESTON_OPTION_INTEGER, "output-count", 0, &option_count },
-		{ WESTON_OPTION_BOOLEAN, "no-input", 0, &no_input },
-		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &use_pixman },
-	};
-
-	parse_options(x11_options, ARRAY_LENGTH(x11_options), argc, argv);
-
-	b = x11_backend_create(compositor,
-			       fullscreen,
-			       no_input,
-			       use_pixman,
-			       argc, argv, config);
-	if (b == NULL)
-		return -1;
-	return 0;
+	return -1;
 }

@@ -1864,24 +1864,15 @@ static const char *left_ptrs[] = {
 };
 
 static void
-create_cursor(struct wayland_backend *b, struct weston_config *config)
+create_cursor(struct wayland_backend *b, const char *theme, int size)
 {
-	struct weston_config_section *s;
-	int size;
-	char *theme = NULL;
 	unsigned int i;
-
-	s = weston_config_get_section(config, "shell", NULL, NULL);
-	weston_config_section_get_string(s, "cursor-theme", &theme, NULL);
-	weston_config_section_get_int(s, "cursor-size", &size, 32);
 
 	b->cursor_theme = wl_cursor_theme_load(theme, size, b->parent.shm);
 	if (!b->cursor_theme) {
 		fprintf(stderr, "could not load cursor theme\n");
 		return;
 	}
-
-	free(theme);
 
 	b->cursor = NULL;
 	for (i = 0; !b->cursor && i < ARRAY_LENGTH(left_ptrs); ++i)
@@ -1917,8 +1908,8 @@ fullscreen_binding(struct weston_seat *seat_base, uint32_t time, uint32_t key,
 
 static struct wayland_backend *
 wayland_backend_create(struct weston_compositor *compositor, int use_pixman,
-		       const char *display_name, int *argc, char *argv[],
-		       struct weston_config *config)
+		       const char *display_name,
+		       const char *cursor_theme, int cursor_size)
 {
 	struct wayland_backend *b;
 	struct wl_event_loop *loop;
@@ -1929,10 +1920,6 @@ wayland_backend_create(struct weston_compositor *compositor, int use_pixman,
 		return NULL;
 
 	b->compositor = compositor;
-	if (weston_compositor_init(compositor, argc, argv,
-				   config) < 0)
-		goto err_free;
-
 	if (weston_compositor_set_presentation_clock_software(compositor) < 0)
 		goto err_compositor;
 
@@ -1948,7 +1935,7 @@ wayland_backend_create(struct weston_compositor *compositor, int use_pixman,
 	wl_registry_add_listener(b->parent.registry, &registry_listener, b);
 	wl_display_roundtrip(b->parent.wl_display);
 
-	create_cursor(b, config);
+	create_cursor(b, cursor_theme, cursor_size);
 
 	b->use_pixman = use_pixman;
 
@@ -1998,7 +1985,7 @@ err_display:
 	wl_display_disconnect(b->parent.wl_display);
 err_compositor:
 	weston_compositor_shutdown(compositor);
-err_free:
+
 	free(b);
 	return NULL;
 }
@@ -2035,6 +2022,8 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	int x, count, width, height, scale, use_pixman, fullscreen, sprawl;
 	const char *section_name, *display_name;
 	char *name;
+	int size;
+	char *theme = NULL;
 
 	const struct weston_option wayland_options[] = {
 		{ WESTON_OPTION_INTEGER, "width", 0, &width },
@@ -2058,8 +2047,13 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	parse_options(wayland_options,
 		      ARRAY_LENGTH(wayland_options), argc, argv);
 
+	section = weston_config_get_section(config, "shell", NULL, NULL);
+	weston_config_section_get_string(section, "cursor-theme", &theme, NULL);
+	weston_config_section_get_int(section, "cursor-size", &size, 32);
+
 	b = wayland_backend_create(compositor, use_pixman, display_name,
-				   argc, argv, config);
+				   theme, size);
+	free(theme);
 	if (!b)
 		return -1;
 

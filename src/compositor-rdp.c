@@ -1085,8 +1085,7 @@ rdp_incoming_peer(freerdp_listener *instance, freerdp_peer *client)
 
 static struct rdp_backend *
 rdp_backend_create(struct weston_compositor *compositor,
-		   struct rdp_backend_config *config,
-		   int *argc, char *argv[], struct weston_config *wconfig)
+		   struct rdp_backend_config *config)
 {
 	struct rdp_backend *b;
 	char *fd_str;
@@ -1097,9 +1096,6 @@ rdp_backend_create(struct weston_compositor *compositor,
 		return NULL;
 
 	b->compositor = compositor;
-	if (weston_compositor_init(compositor, argc, argv, wconfig) < 0)
-		goto err_free;
-
 	b->base.destroy = rdp_destroy;
 	b->base.restore = rdp_restore;
 	b->rdp_key = config->rdp_key ? strdup(config->rdp_key) : NULL;
@@ -1196,7 +1192,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	};
 
 	parse_options(rdp_options, ARRAY_LENGTH(rdp_options), argc, argv);
-	b = rdp_backend_create(compositor, &config, argc, argv, wconfig);
+	b = rdp_backend_create(compositor, &config);
 	if (b == NULL)
 		return -1;
 	return 0;

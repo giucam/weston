@@ -861,8 +861,7 @@ switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *d
 }
 
 static struct fbdev_backend *
-fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv[],
-                     struct weston_config *config,
+fbdev_backend_create(struct weston_compositor *compositor,
                      struct fbdev_parameters *param)
 {
 	struct fbdev_backend *backend;
@@ -876,10 +875,6 @@ fbdev_backend_create(struct weston_compositor *compositor, int *argc, char *argv
 		return NULL;
 
 	backend->compositor = compositor;
-	if (weston_compositor_init(compositor, argc, argv,
-	                           config) < 0)
-		goto out_free;
-
 	if (weston_compositor_set_presentation_clock_software(
 							compositor) < 0)
 		goto out_compositor;
@@ -952,7 +947,6 @@ out_udev:
 out_compositor:
 	weston_compositor_shutdown(compositor);
 
-out_free:
 	free(backend);
 
 	return NULL;
@@ -979,7 +973,7 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
 
-	b = fbdev_backend_create(compositor, argc, argv, config, &param);
+	b = fbdev_backend_create(compositor, &param);
 	if (b == NULL)
 		return -1;
 	return 0;

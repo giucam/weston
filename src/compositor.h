@@ -1258,7 +1258,7 @@ weston_compositor_get_time(void);
 
 int
 weston_compositor_init(struct weston_compositor *ec,
-		       int *argc, char *argv[], struct weston_config *config);
+		       struct weston_config *config);
 int
 weston_compositor_set_presentation_clock(struct weston_compositor *compositor,
 					 clockid_t clk_id);

@@ -4010,7 +4010,6 @@ weston_environment_get_fd(const char *env)
 
 WL_EXPORT int
 weston_compositor_init(struct weston_compositor *ec,
-		       int *argc, char *argv[],
 		       struct weston_config *config)
 {
 	struct wl_event_loop *loop;
@@ -4804,6 +4803,11 @@ int main(int argc, char *argv[])
 	}
 
 	ec->wl_display = display;
+	if (weston_compositor_init(ec, config) < 0) {
+		ret = EXIT_FAILURE;
+		goto out_signals;
+	}
+
 	if (backend_init(ec, &argc, argv, config) < 0) {
 		weston_log("fatal: failed to create compositor backend\n");
 		ret = EXIT_FAILURE;
