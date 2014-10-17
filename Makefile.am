@@ -71,6 +71,7 @@ libweston_@ABI_VERSION@_la_LIBADD =			\
 
 libweston_@ABI_VERSION@_la_SOURCES =			\
 	src/git-version.h				\
+	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
 	src/input.c					\
@@ -130,7 +131,6 @@ weston_SOURCES =					\
 	src/compositor-fbdev.h				\
 	src/compositor-rdp.h				\
 	src/compositor-rpi.h				\
-	src/log.c					\
 	shared/helpers.h
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
