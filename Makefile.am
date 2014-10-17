@@ -3,7 +3,7 @@ ACLOCAL_AMFLAGS = -I m4
 bin_PROGRAMS =
 noinst_PROGRAMS =
 libexec_PROGRAMS =
-moduledir = $(libdir)/weston
+moduledir = $(libdir)/weston-$(ABI_VERSION)
 module_LTLIBRARIES =
 noinst_LTLIBRARIES =
 BUILT_SOURCES =
@@ -59,26 +59,20 @@ CLEANFILES = weston.ini				\
 	internal-screenshot-00.png		\
 	$(BUILT_SOURCES)
 
-bin_PROGRAMS += weston
-
-weston_LDFLAGS = -export-dynamic
-weston_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
-weston_CFLAGS = $(AM_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
-weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
+lib_LTLIBRARIES = libweston-@ABI_VERSION@.la
+libweston_@ABI_VERSION@_la_CPPFLAGS = 			\
+	$(AM_CPPFLAGS) -DIN_WESTON
+libweston_@ABI_VERSION@_la_CFLAGS = 			\
+	$(AM_CFLAGS) $(COMPOSITOR_CFLAGS)		\
+	$(LIBUNWIND_CFLAGS)
+libweston_@ABI_VERSION@_la_LIBADD =			\
+	$(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) 		\
 	$(DLOPEN_LIBS) -lm libshared.la
 
-weston_SOURCES =					\
+libweston_@ABI_VERSION@_la_SOURCES =			\
 	src/git-version.h				\
-	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
-	src/compositor-x11.h				\
-	src/compositor-wayland.h			\
-	src/compositor-drm.h				\
-	src/compositor-headless.h			\
-	src/compositor-fbdev.h				\
-	src/compositor-rdp.h				\
-	src/compositor-rpi.h				\
 	src/input.c					\
 	src/data-device.c				\
 	src/screenshooter.c				\
@@ -93,7 +87,6 @@ weston_SOURCES =					\
 	src/timeline.c					\
 	src/timeline.h					\
 	src/timeline-object.h				\
-	src/main.c					\
 	shared/helpers.h				\
 	shared/matrix.c					\
 	shared/matrix.h					\
@@ -101,7 +94,7 @@ weston_SOURCES =					\
 	shared/platform.h				\
 	src/weston-egl-ext.h
 
-nodist_weston_SOURCES =					\
+nodist_libweston_@ABI_VERSION@_la_SOURCES =		\
 	protocol/screenshooter-protocol.c		\
 	protocol/screenshooter-server-protocol.h	\
 	protocol/text-cursor-position-protocol.c	\
@@ -117,7 +110,28 @@ nodist_weston_SOURCES =					\
 	protocol/scaler-protocol.c			\
 	protocol/scaler-server-protocol.h
 
-BUILT_SOURCES += $(nodist_weston_SOURCES)
+BUILT_SOURCES += $(nodist_libweston_@ABI_VERSION@_la_SOURCES)
+
+bin_PROGRAMS += weston
+
+weston_LDFLAGS = -export-dynamic
+weston_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
+weston_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
+weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
+	$(DLOPEN_LIBS) -lm libshared.la			\
+	libweston-@ABI_VERSION@.la
+
+weston_SOURCES =					\
+	src/main.c					\
+	src/compositor-x11.h				\
+	src/compositor-wayland.h			\
+	src/compositor-drm.h				\
+	src/compositor-headless.h			\
+	src/compositor-fbdev.h				\
+	src/compositor-rdp.h				\
+	src/compositor-rpi.h				\
+	src/log.c					\
+	shared/helpers.h
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
@@ -185,13 +199,21 @@ endif
 endif # BUILD_WESTON_LAUNCH
 
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = src/weston.pc
+pkgconfig_DATA = 			\
+	weston-$(ABI_VERSION).pc	\
+	libweston-$(ABI_VERSION).pc
+
+weston-$(ABI_VERSION).pc: src/weston.pc
+	$(AM_V_GEN) cp src/weston.pc weston-$(ABI_VERSION).pc
+
+libweston-$(ABI_VERSION).pc: src/libweston.pc
+	$(AM_V_GEN) cp src/libweston.pc libweston-$(ABI_VERSION).pc
 
 wayland_sessiondir = $(datadir)/wayland-sessions
 wayland_session_DATA = src/weston.desktop
 dist_wayland_session_DATA = $(wayland_session_DATA)
 
-westonincludedir = $(includedir)/weston
+westonincludedir = $(includedir)/weston-$(ABI_VERSION)
 westoninclude_HEADERS =				\
 	src/version.h				\
 	src/compositor.h			\

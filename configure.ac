@@ -31,6 +31,9 @@ AM_SILENT_RULES([yes])
 AC_PROG_CC
 AC_PROG_SED
 
+ABI_VERSION=1
+AC_SUBST(ABI_VERSION)
+
 # Initialize libtool
 LT_PREREQ([2.2])
 LT_INIT([disable-static])
@@ -504,7 +507,7 @@ if test x$wayland_scanner = x; then
 	wayland_scanner=`$PKG_CONFIG --variable=wayland_scanner wayland-scanner`
 fi
 
-AC_CONFIG_FILES([Makefile src/version.h src/weston.pc])
+AC_CONFIG_FILES([Makefile src/version.h src/weston.pc src/libweston.pc])
 
 AM_CONDITIONAL([HAVE_GIT_REPO], [test -f $srcdir/.git/logs/HEAD])
 

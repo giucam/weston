@@ -1,0 +1,12 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+libexecdir=@libexecdir@
+pkglibexecdir=${libexecdir}/@PACKAGE@
+
+Name: libweston
+Description: A library to build Wayland compositors
+Version: @WESTON_VERSION@
+Libs: -L${libdir} -lweston-@ABI_VERSION@
+Cflags: -I${includedir} -I${includedir}/weston-@ABI_VERSION@
