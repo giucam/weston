@@ -1910,7 +1910,7 @@ bind_seat(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 }
 
 #ifdef ENABLE_XKBCOMMON
-int
+WL_EXPORT int
 weston_compositor_xkb_init(struct weston_compositor *ec,
 			   struct xkb_rule_names *names)
 {

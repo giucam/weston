@@ -59,17 +59,14 @@ CLEANFILES = weston.ini				\
 	internal-screenshot-00.png		\
 	$(BUILT_SOURCES)
 
-bin_PROGRAMS += weston
-
-weston_LDFLAGS = -export-dynamic
-weston_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
-weston_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
-weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
+lib_LTLIBRARIES = libweston.la
+libweston_la_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
+libweston_la_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
+libweston_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 	$(DLOPEN_LIBS) -lm libshared.la
 
-weston_SOURCES =					\
+libweston_la_SOURCES =           			\
 	src/git-version.h				\
-	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
 	src/input.c					\
@@ -86,14 +83,13 @@ weston_SOURCES =					\
 	src/timeline.c					\
 	src/timeline.h					\
 	src/timeline-object.h				\
-	src/weston.c					\
 	shared/matrix.c					\
 	shared/matrix.h					\
 	shared/zalloc.h					\
 	shared/platform.h				\
 	src/weston-egl-ext.h
 
-nodist_weston_SOURCES =					\
+nodist_libweston_la_SOURCES =					\
 	protocol/screenshooter-protocol.c		\
 	protocol/screenshooter-server-protocol.h	\
 	protocol/text-cursor-position-protocol.c	\
@@ -109,7 +105,19 @@ nodist_weston_SOURCES =					\
 	protocol/scaler-protocol.c			\
 	protocol/scaler-server-protocol.h
 
-BUILT_SOURCES += $(nodist_weston_SOURCES)
+BUILT_SOURCES += $(nodist_libweston_la_SOURCES)
+
+bin_PROGRAMS += weston
+
+weston_LDFLAGS = -export-dynamic
+weston_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
+weston_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
+weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
+	$(DLOPEN_LIBS) -lm libshared.la libweston.la
+
+weston_SOURCES =					\
+	src/weston.c					\
+	src/log.c
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
