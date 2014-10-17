@@ -160,6 +160,7 @@ westoninclude_HEADERS =				\
 	src/version.h				\
 	src/compositor.h			\
 	src/compositor-x11.h			\
+	src/compositor-drm.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
 	shared/zalloc.h
