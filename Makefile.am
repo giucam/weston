@@ -46,6 +46,7 @@ libweston_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 
 libweston_la_SOURCES =           			\
 	src/git-version.h				\
+	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
 	src/input.c					\
@@ -91,8 +92,7 @@ weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 	$(DLOPEN_LIBS) -lm libshared.la libweston.la
 
 weston_SOURCES =					\
-	src/weston.c					\
-	src/log.c
+	src/weston.c
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
