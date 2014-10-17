@@ -79,7 +79,6 @@ libweston_@ABI_VERSION@_la_SOURCES =			\
 	src/screenshooter.c				\
 	src/clipboard.c					\
 	src/zoom.c					\
-	src/text-backend.c				\
 	src/bindings.c					\
 	src/animation.c					\
 	src/noop-renderer.c				\
@@ -98,10 +97,6 @@ libweston_@ABI_VERSION@_la_SOURCES =			\
 nodist_libweston_@ABI_VERSION@_la_SOURCES =		\
 	protocol/text-cursor-position-protocol.c	\
 	protocol/text-cursor-position-server-protocol.h	\
-	protocol/text-protocol.c			\
-	protocol/text-server-protocol.h			\
-	protocol/input-method-protocol.c		\
-	protocol/input-method-server-protocol.h		\
 	protocol/workspaces-protocol.c			\
 	protocol/workspaces-server-protocol.h		\
 	protocol/presentation_timing-protocol.c		\
@@ -130,11 +125,16 @@ weston_SOURCES =					\
 	src/compositor-fbdev.h				\
 	src/compositor-rdp.h				\
 	src/compositor-rpi.h				\
+	src/text-backend.c				\
 	shared/helpers.h
 
 nodist_weston_SOURCES =					\
 	protocol/screenshooter-protocol.c		\
-	protocol/screenshooter-server-protocol.h
+	protocol/screenshooter-server-protocol.h	\
+	protocol/text-protocol.c			\
+	protocol/text-server-protocol.h			\
+	protocol/input-method-protocol.c		\
+	protocol/input-method-server-protocol.h
 
 BUILT_SOURCES += $(nodist_weston_SOURCES)
 
