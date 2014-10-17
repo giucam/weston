@@ -47,6 +47,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "compositor.h"
+#include "compositor-x11.h"
 #include "gl-renderer.h"
 #include "pixman-renderer.h"
 #include "../shared/config-parser.h"
@@ -754,7 +755,7 @@ x11_output_init_shm(struct x11_backend *b, struct x11_output *output,
 	return 0;
 }
 
-static struct x11_output *
+WL_EXPORT struct x11_output *
 x11_backend_create_output(struct x11_backend *b, int x, int y,
 			     int width, int height, int fullscreen,
 			     int no_input, char *configured_name,
@@ -1499,7 +1500,7 @@ init_gl_renderer(struct x11_backend *b)
 
 	return ret;
 }
-static struct x11_backend *
+WL_EXPORT struct x11_backend *
 x11_backend_create(struct weston_compositor *compositor,
 		   int fullscreen,
 		   int no_input,
