@@ -54,7 +54,6 @@ libweston_la_SOURCES =           			\
 	src/screenshooter.c				\
 	src/clipboard.c					\
 	src/zoom.c					\
-	src/text-backend.c				\
 	src/bindings.c					\
 	src/animation.c					\
 	src/noop-renderer.c				\
@@ -92,7 +91,8 @@ weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 	$(DLOPEN_LIBS) -lm libshared.la libweston.la
 
 weston_SOURCES =					\
-	src/weston.c
+	src/weston.c					\
+	src/text-backend.c
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
