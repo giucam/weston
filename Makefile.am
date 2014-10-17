@@ -197,6 +197,7 @@ westoninclude_HEADERS =				\
 	src/compositor.h			\
 	src/timeline-object.h			\
 	src/compositor-x11.h			\
+	src/compositor-drm.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
 	shared/zalloc.h				\
