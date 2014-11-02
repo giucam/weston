@@ -171,6 +171,7 @@ westoninclude_HEADERS =				\
 	src/compositor.h			\
 	src/compositor-x11.h			\
 	src/compositor-drm.h			\
+	src/compositor-wayland.h		\
 	src/weston-launcher.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\

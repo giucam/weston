@@ -37,6 +37,7 @@
 #include <wayland-cursor.h>
 
 #include "compositor.h"
+#include "compositor-wayland.h"
 #include "gl-renderer.h"
 #include "pixman-renderer.h"
 #include "../shared/image-loader.h"
@@ -733,7 +734,7 @@ wayland_output_resize_surface(struct wayland_output *output)
 		buffer->output = NULL;
 }
 
-static int
+WL_EXPORT int
 wayland_output_set_windowed(struct wayland_output *output)
 {
 	struct wayland_backend *b =
@@ -778,9 +779,9 @@ wayland_output_set_windowed(struct wayland_output *output)
 	return 0;
 }
 
-static void
+WL_EXPORT void
 wayland_output_set_fullscreen(struct wayland_output *output,
-			      enum wl_shell_surface_fullscreen_method method,
+			      enum wayland_backend_fullscreen_method method,
 			      uint32_t framerate, struct wl_output *target)
 {
 	struct wayland_backend *b =
@@ -966,7 +967,7 @@ err_output:
 	return -1;
 }
 
-static struct wayland_output *
+WL_EXPORT struct wayland_output *
 wayland_output_create(struct wayland_backend *b, int x, int y,
 		      int width, int height, const char *name, int fullscreen,
 		      uint32_t transform, int32_t scale)
@@ -1906,13 +1907,14 @@ fullscreen_binding(struct weston_seat *seat_base, uint32_t time, uint32_t key,
 	weston_output_schedule_repaint(&input->output->base);
 }
 
-static struct wayland_backend *
+WL_EXPORT struct wayland_backend *
 wayland_backend_create(struct weston_compositor *compositor, int use_pixman,
 		       const char *display_name,
-		       const char *cursor_theme, int cursor_size)
+		       const char *cursor_theme, int cursor_size, int sprawl)
 {
 	struct wayland_backend *b;
 	struct wl_event_loop *loop;
+	struct wayland_parent_output *poutput;
 	int fd;
 
 	b = zalloc(sizeof *b);
@@ -1977,6 +1979,16 @@ wayland_backend_create(struct weston_compositor *compositor, int use_pixman,
 
 	wl_event_source_check(b->parent.wl_source);
 
+	if (sprawl || b->parent.fshell) {
+		b->sprawl_across_outputs = 1;
+		wl_display_roundtrip(b->parent.wl_display);
+
+		wl_list_for_each(poutput, &b->parent.output_list, link)
+		wayland_output_create_for_parent_output(b, poutput);
+
+		return 0;
+	}
+
 	compositor->backend = &b->base;
 	return b;
 err_renderer:
@@ -2017,7 +2029,6 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 {
 	struct wayland_backend *b;
 	struct wayland_output *output;
-	struct wayland_parent_output *poutput;
 	struct weston_config_section *section;
 	int x, count, width, height, scale, use_pixman, fullscreen, sprawl;
 	const char *section_name, *display_name;
@@ -2052,20 +2063,10 @@ backend_init(struct weston_compositor *compositor, int *argc, char *argv[],
 	weston_config_section_get_int(section, "cursor-size", &size, 32);
 
 	b = wayland_backend_create(compositor, use_pixman, display_name,
-				   theme, size);
+				   theme, size, sprawl);
 	free(theme);
 	if (!b)
 		return -1;
-
-	if (sprawl || b->parent.fshell) {
-		b->sprawl_across_outputs = 1;
-		wl_display_roundtrip(b->parent.wl_display);
-
-		wl_list_for_each(poutput, &b->parent.output_list, link)
-			wayland_output_create_for_parent_output(b, poutput);
-
-		return 0;
-	}
 
 	if (fullscreen) {
 		output = wayland_output_create(b, 0, 0, width, height,
