@@ -1,9 +1,11 @@
 ACLOCAL_AMFLAGS = -I m4
 
+abi_version = 1
+
 bin_PROGRAMS =
 noinst_PROGRAMS =
 libexec_PROGRAMS =
-moduledir = $(libdir)/weston
+moduledir = $(libdir)/weston-$(abi_version)
 module_LTLIBRARIES =
 noinst_LTLIBRARIES =
 BUILT_SOURCES =
@@ -64,6 +66,7 @@ libweston_la_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
 libweston_la_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
 libweston_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 	$(DLOPEN_LIBS) -lm libshared.la
+libweston_la_LDFLAGS = -release $(abi_version)
 
 libweston_la_SOURCES =           			\
 	src/git-version.h				\
@@ -162,6 +165,7 @@ if BUILD_WESTON_LAUNCH
 lib_LTLIBRARIES += libweston-launcher.la
 libweston_launcher_la_CPPFLAGS = $(AM_CPPFLAGS)
 libweston_launcher_la_LIBADD = $(PAM_LIBS) $(SYSTEMD_LOGIN_LIBS) $(LIBDRM_LIBS)
+libweston_launcher_la_LDFLAGS = -release $(abi_version)
 libweston_launcher_la_CFLAGS =			\
 	$(GCC_CFLAGS)				\
 	$(PAM_CFLAGS)				\
@@ -201,7 +205,7 @@ wayland_sessiondir = $(datadir)/wayland-sessions
 wayland_session_DATA = src/weston.desktop
 dist_wayland_session_DATA = $(wayland_session_DATA)
 
-westonincludedir = $(includedir)/weston
+westonincludedir = $(includedir)/weston-$(abi_version)
 westoninclude_HEADERS =				\
 	src/version.h				\
 	src/compositor.h			\
@@ -908,6 +912,8 @@ libweston_xwayland_la_CFLAGS =			\
 	$(COMPOSITOR_CFLAGS)			\
 	$(PIXMAN_CFLAGS)			\
 	$(CAIRO_CFLAGS)
+libweston_xwayland_la_LDFLAGS = 		\
+	-release $(abi_version)
 libweston_xwayland_la_SOURCES =			\
 	xwayland/xwayland.h			\
 	xwayland/window-manager.c		\
