@@ -110,6 +110,8 @@ nodist_libweston_la_SOURCES =					\
 
 BUILT_SOURCES += $(nodist_libweston_la_SOURCES)
 
+
+if BUILD_WESTON_BINARIES
 bin_PROGRAMS += weston
 
 weston_LDFLAGS = -export-dynamic
@@ -121,6 +123,7 @@ weston_LDADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
 weston_SOURCES =					\
 	src/weston.c					\
 	src/text-backend.c
+endif
 
 # Track this dependency explicitly instead of using BUILT_SOURCES.  We
 # add BUILT_SOURCES to CLEANFILES, but we want to keep git-version.h
@@ -176,6 +179,7 @@ libweston_launcher_la_SOURCES = 		\
 	src/weston-launch.h		\
 	src/weston-launcher.h
 
+if BUILD_WESTON_BINARIES
 bin_PROGRAMS += weston-launch
 weston_launch_SOURCES = src/weston-launch.c
 weston_launch_CPPFLAGS = -DBINDIR='"$(bindir)"' -I$(top_srcdir)/libweston
@@ -195,6 +199,7 @@ install-exec-hook:
 		false; \
 	fi
 endif
+endif # BUILD_WESTON_BINARIES
 
 endif # BUILD_WESTON_LAUNCH
 
@@ -413,6 +418,7 @@ if BUILD_CLIENTS
 
 bin_PROGRAMS += weston-terminal weston-info
 
+if BUILD_WESTON_BINARIES
 libexec_PROGRAMS +=				\
 	weston-desktop-shell			\
 	weston-screenshooter			\
@@ -422,6 +428,7 @@ libexec_PROGRAMS +=				\
 if ENABLE_IVI_SHELL
 libexec_PROGRAMS +=				\
 	weston-ivi-shell-user-interface
+endif
 endif
 
 demo_clients =					\
@@ -537,6 +544,7 @@ weston_flower_SOURCES = clients/flower.c
 weston_flower_LDADD = libtoytoolkit.la
 weston_flower_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
 
+if BUILD_WESTON_BINARIES
 weston_screenshooter_SOURCES =				\
 	clients/screenshot.c
 nodist_weston_screenshooter_SOURCES =			\
@@ -544,6 +552,7 @@ nodist_weston_screenshooter_SOURCES =			\
 	protocol/screenshooter-client-protocol.h
 weston_screenshooter_LDADD = $(CLIENT_LIBS) libshared.la
 weston_screenshooter_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
+endif
 
 weston_terminal_SOURCES = clients/terminal.c
 weston_terminal_LDADD = libtoytoolkit.la -lutil
@@ -637,6 +646,7 @@ weston_editor_LDADD = libtoytoolkit.la $(PANGO_LIBS)
 weston_editor_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS) $(PANGO_CFLAGS)
 endif
 
+if BUILD_WESTON_BINARIES
 weston_keyboard_SOURCES = clients/keyboard.c
 nodist_weston_keyboard_SOURCES =			\
 	protocol/desktop-shell-client-protocol.h	\
@@ -652,6 +662,7 @@ nodist_weston_simple_im_SOURCES =		\
 	protocol/input-method-client-protocol.h
 weston_simple_im_LDADD = $(CLIENT_LIBS)
 weston_simple_im_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
+endif
 
 weston_info_SOURCES = clients/weston-info.c
 nodist_weston_info_SOURCES =				\
@@ -660,13 +671,16 @@ nodist_weston_info_SOURCES =				\
 weston_info_LDADD = $(WESTON_INFO_LIBS) libshared.la
 weston_info_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
 
+if BUILD_WESTON_BINARIES
 weston_desktop_shell_SOURCES = clients/desktop-shell.c
 nodist_weston_desktop_shell_SOURCES =			\
 	protocol/desktop-shell-client-protocol.h	\
 	protocol/desktop-shell-protocol.c
 weston_desktop_shell_LDADD = libtoytoolkit.la
 weston_desktop_shell_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
+endif
 
+if BUILD_WESTON_BINARIES
 if ENABLE_IVI_SHELL
 weston_ivi_shell_user_interface_SOURCES = clients/ivi-shell-user-interface.c
 nodist_weston_ivi_shell_user_interface_SOURCES =			\
@@ -676,6 +690,7 @@ nodist_weston_ivi_shell_user_interface_SOURCES =			\
         protocol/ivi-application-protocol.c
 weston_ivi_shell_user_interface_LDADD = libtoytoolkit.la
 weston_ivi_shell_user_interface_CFLAGS = $(AM_CFLAGS) $(CLIENT_CFLAGS)
+endif
 endif
 
 if BUILD_FULL_GL_CLIENTS

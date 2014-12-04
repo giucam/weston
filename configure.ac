@@ -354,6 +354,12 @@ PKG_CHECK_MODULES(SYSTEMD_LOGIN_209, [libsystemd-login >= 209],
 AS_IF([test "x$have_systemd_login_209" = "xyes"],
       [AC_DEFINE([HAVE_SYSTEMD_LOGIN_209], [1], [Have systemd-login >= 209])])
 
+AC_ARG_ENABLE(weston-binaries,
+              AS_HELP_STRING([--enable-weston-binaries],
+                             [build the weston binaries]),,
+              enable_weston_binaries=yes)
+AM_CONDITIONAL(BUILD_WESTON_BINARIES, test x$enable_weston_binaries == xyes)
+
 AC_ARG_ENABLE(weston-launch, [  --enable-weston-launch],, enable_weston_launch=yes)
 AM_CONDITIONAL(BUILD_WESTON_LAUNCH, test x$enable_weston_launch == xyes)
 if test x$enable_weston_launch == xyes; then
@@ -518,6 +524,8 @@ AC_OUTPUT
 AC_MSG_RESULT([
 	Native Backend			${WESTON_NATIVE_BACKEND}
 	setuid Install			${enable_setuid_install}
+
+	Buld the weston binaries	${enable_weston_binaries}
 
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
