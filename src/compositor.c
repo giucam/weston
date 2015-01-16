@@ -54,6 +54,8 @@
 #include "timeline.h"
 
 #include "compositor.h"
+#include "launcher-impl.h"
+#include "launcher-util.h"
 #include "scaler-server-protocol.h"
 #include "presentation-time-server-protocol.h"
 #include "shared/helpers.h"
@@ -4489,6 +4491,22 @@ compositor_bind(struct wl_client *client,
 
 	wl_resource_set_implementation(resource, &compositor_interface,
 				       compositor, NULL);
+}
+
+WL_EXPORT int
+weston_compositor_activate_vt(struct weston_compositor *compositor, int vt)
+{
+	if (compositor->launcher)
+		return weston_launcher_activate_vt(compositor->launcher, vt);
+	return -1;
+}
+
+WL_EXPORT void
+weston_compositor_set_vt_switcher(struct weston_compositor *compositor,
+				  weston_compositor_vt_switcher_func_t switcher)
+{
+	if (compositor->launcher)
+		compositor->launcher->vt_switcher = switcher;
 }
 
 WL_EXPORT int

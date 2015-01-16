@@ -54,6 +54,7 @@
 #include "git-version.h"
 #include "version.h"
 #include "weston.h"
+#include "launcher-util.h"
 
 #include "compositor-drm.h"
 #include "compositor-headless.h"

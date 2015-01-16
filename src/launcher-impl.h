@@ -34,10 +34,12 @@ struct launcher_interface {
 	void (* close) (struct weston_launcher *launcher, int fd);
 	int (* activate_vt) (struct weston_launcher *launcher, int vt);
 	void (* restore) (struct weston_launcher *launcher);
+	int (* get_vt) (struct weston_launcher *launcher);
 };
 
 struct weston_launcher {
 	struct launcher_interface *iface;
+	weston_compositor_vt_switcher_func_t vt_switcher;
 };
 
 extern struct launcher_interface launcher_logind_iface;

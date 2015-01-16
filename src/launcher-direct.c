@@ -305,6 +305,13 @@ launcher_direct_destroy(struct weston_launcher *launcher_base)
 	free(launcher);
 }
 
+static int
+launcher_direct_get_vt(struct weston_launcher *base)
+{
+	struct launcher_direct *launcher = wl_container_of(base, launcher, base);
+	return launcher->tty;
+}
+
 struct launcher_interface launcher_direct_iface = {
 	launcher_direct_connect,
 	launcher_direct_destroy,
@@ -312,4 +319,5 @@ struct launcher_interface launcher_direct_iface = {
 	launcher_direct_close,
 	launcher_direct_activate_vt,
 	launcher_direct_restore,
+	launcher_direct_get_vt,
 };
