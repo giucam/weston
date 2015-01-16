@@ -51,6 +51,7 @@
 #include "timeline.h"
 
 #include "compositor.h"
+#include "launcher-util.h"
 #include "scaler-server-protocol.h"
 #include "presentation_timing-server-protocol.h"
 #include "../shared/os-compatibility.h"

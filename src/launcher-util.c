@@ -381,7 +381,7 @@ setup_tty(struct weston_launcher *launcher, int tty)
 	return -1;
 }
 
-int
+WL_EXPORT int
 weston_launcher_activate_vt(struct weston_launcher *launcher, int vt)
 {
 	if (launcher->logind)
@@ -460,3 +460,14 @@ weston_launcher_destroy(struct weston_launcher *launcher)
 
 	free(launcher);
 }
+
+WL_EXPORT int
+weston_launcher_get_vt(struct weston_launcher *launcher)
+{
+	struct stat s;
+	if (fstat(launcher->tty, &s) < 0)
+		return -1;
+
+	return minor(s.st_rdev);
+}
+

@@ -65,7 +65,7 @@ lib_LTLIBRARIES = libweston.la
 libweston_la_CPPFLAGS = $(AM_CPPFLAGS) -DIN_WESTON
 libweston_la_CFLAGS = $(GCC_CFLAGS) $(COMPOSITOR_CFLAGS) $(LIBUNWIND_CFLAGS)
 libweston_la_LIBADD = $(COMPOSITOR_LIBS) $(LIBUNWIND_LIBS) \
-	$(DLOPEN_LIBS) -lm libshared.la
+	$(DLOPEN_LIBS) -lm libshared.la libsession-helper.la
 libweston_la_LDFLAGS = -release $(abi_version)
 
 libweston_la_SOURCES =           			\

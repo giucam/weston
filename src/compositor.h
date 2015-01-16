@@ -1250,6 +1250,33 @@ void
 weston_compositor_set_default_pointer_grab(struct weston_compositor *compositor,
 			const struct weston_pointer_grab_interface *interface);
 
+/**
+ * Request a vt switch for the compositor.
+ *
+ * \param launcher The launcher helper used by the compositor
+ * \param vt The vt to switch to
+ *
+ * Returns 0 on success, -1 otherwise.
+ *
+ * \sa weston_launcher_get_vt
+ * \sa weston_compositor.launcher
+ */
+int
+weston_launcher_activate_vt(struct weston_launcher *launcher, int vt);
+
+/**
+ * Get the vt the compositor is running on.
+ *
+ * \param launcher The launcher helper used by the compositor
+ *
+ * Returns the number of the vt on success, -1 otherwise.
+ *
+ * \sa weston_launcher_activate_vt
+ * \sa weston_compositor.launcher
+ */
+int
+weston_launcher_get_vt(struct weston_launcher *launcher);
+
 int
 weston_environment_get_fd(const char *env);
 

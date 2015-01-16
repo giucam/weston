@@ -999,6 +999,14 @@ load_configuration(struct weston_config **config, int32_t noconfig,
 }
 
 static void
+switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *data)
+{
+	struct weston_compositor *compositor = data;
+
+	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
+}
+
+static void
 handle_terminate(struct weston_compositor *c)
 {
 	wl_display_terminate(c->wl_display);
@@ -1027,6 +1035,7 @@ int main(int argc, char *argv[])
 	int32_t version = 0;
 	int32_t noconfig = 0;
 	int32_t numlock_on;
+	uint32_t key;
 	char *config_file = NULL;
 	struct weston_config *config = NULL;
 	struct weston_config_section *section;
@@ -1119,6 +1128,12 @@ int main(int argc, char *argv[])
 		goto out_signals;
 	}
 
+	if (ec->launcher) {
+		for (key = KEY_F1; key < KEY_F9; key++)
+			weston_compositor_add_key_binding(ec, key,
+							MODIFIER_CTRL | MODIFIER_ALT,
+							switch_vt_binding, ec);
+	}
 	catch_signals();
 	segv_compositor = ec;
 

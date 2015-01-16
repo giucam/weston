@@ -802,21 +802,12 @@ fbdev_restore(struct weston_compositor *compositor)
 	weston_launcher_restore(compositor->launcher);
 }
 
-static void
-switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *data)
-{
-	struct weston_compositor *compositor = data;
-
-	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
-}
-
 static struct fbdev_backend *
 fbdev_backend_create(struct weston_compositor *compositor,
                      struct fbdev_parameters *param)
 {
 	struct fbdev_backend *backend;
 	const char *seat_id = default_seat;
-	uint32_t key;
 
 	weston_log("initializing fbdev backend\n");
 
@@ -854,11 +845,6 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->use_pixman = !param->use_gl;
 	backend->get_output_parameters = param->get_output_parameters;
 
-	for (key = KEY_F1; key < KEY_F9; key++)
-		weston_compositor_add_key_binding(compositor, key,
-		                                  MODIFIER_CTRL | MODIFIER_ALT,
-		                                  switch_vt_binding,
-		                                  compositor);
 	if (backend->use_pixman) {
 		if (pixman_renderer_init(compositor) < 0)
 			goto out_launcher;

@@ -2447,14 +2447,6 @@ session_notify(struct wl_listener *listener, void *data)
 	};
 }
 
-static void
-switch_vt_binding(struct weston_seat *seat, uint32_t time, uint32_t key, void *data)
-{
-	struct weston_compositor *compositor = data;
-
-	weston_launcher_activate_vt(compositor->launcher, key - KEY_F1 + 1);
-}
-
 /*
  * Find primary GPU
  * Some systems may have multiple DRM devices attached to a single seat. This
@@ -2693,7 +2685,6 @@ drm_backend_create(struct weston_compositor *compositor,
 	struct udev_device *drm_device;
 	struct wl_event_loop *loop;
 	const char *path;
-	uint32_t key;
 
 	weston_log("initializing drm backend\n");
 
@@ -2763,11 +2754,6 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->base.restore = drm_restore;
 
 	b->prev_state = WESTON_COMPOSITOR_ACTIVE;
-
-	for (key = KEY_F1; key < KEY_F9; key++)
-		weston_compositor_add_key_binding(compositor, key,
-						  MODIFIER_CTRL | MODIFIER_ALT,
-						  switch_vt_binding, compositor);
 
 	wl_list_init(&b->sprite_list);
 	create_sprites(b);
