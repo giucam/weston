@@ -3740,6 +3740,7 @@ WL_EXPORT void
 weston_output_destroy(struct weston_output *output)
 {
 	struct wl_resource *resource;
+	struct weston_view *view;
 
 	output->destroying = 1;
 
@@ -3763,6 +3764,11 @@ weston_output_destroy(struct weston_output *output)
 	}
 
 	wl_global_destroy(output->global);
+
+	wl_list_for_each(view, &output->compositor->view_list, link) {
+		if (view->output == output)
+			weston_view_assign_output(view);
+	}
 }
 
 WL_EXPORT void
