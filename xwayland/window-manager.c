@@ -128,7 +128,6 @@ struct weston_wm_window {
 	uint32_t surface_id;
 	struct weston_surface *surface;
 	struct shell_surface *shsurf;
-	struct weston_view *view;
 	struct wl_listener surface_destroy_listener;
 	struct wl_event_source *repaint_source;
 	struct wl_event_source *configure_source;
@@ -142,6 +141,7 @@ struct weston_wm_window {
 	xcb_atom_t type;
 	int width, height;
 	int x, y;
+	int pos_dirty;
 	int saved_width, saved_height;
 	int decorate;
 	int override_redirect;
@@ -686,6 +686,8 @@ weston_wm_handle_configure_notify(struct weston_wm *wm, xcb_generic_event_t *eve
 
 	window->x = configure_notify->x;
 	window->y = configure_notify->y;
+	window->pos_dirty = 0;
+
 	if (window->override_redirect) {
 		window->width = configure_notify->width;
 		window->height = configure_notify->height;
@@ -790,32 +792,6 @@ weston_wm_window_activate(struct wl_listener *listener, void *data)
 		if (wm->focus_window->frame)
 			frame_set_flag(wm->focus_window->frame, FRAME_FLAG_ACTIVE);
 		weston_wm_window_schedule_repaint(wm->focus_window);
-	}
-}
-
-static void
-weston_wm_window_transform(struct wl_listener *listener, void *data)
-{
-	struct weston_surface *surface = data;
-	struct weston_wm_window *window = get_wm_window(surface);
-	struct weston_wm *wm =
-		container_of(listener, struct weston_wm, transform_listener);
-	uint32_t mask, values[2];
-
-	if (!window || !wm)
-		return;
-
-	if (!window->view || !weston_view_is_mapped(window->view))
-		return;
-
-	if (window->x != window->view->geometry.x ||
-	    window->y != window->view->geometry.y) {
-		values[0] = window->view->geometry.x;
-		values[1] = window->view->geometry.y;
-		mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y;
-
-		xcb_configure_window(wm->conn, window->frame_id, mask, values);
-		xcb_flush(wm->conn);
 	}
 }
 
@@ -1033,7 +1009,6 @@ weston_wm_handle_unmap_notify(struct weston_wm *wm, xcb_generic_event_t *event)
 		wl_list_remove(&window->surface_destroy_listener.link);
 	window->surface = NULL;
 	window->shsurf = NULL;
-	window->view = NULL;
 
 	weston_wm_window_set_wm_state(window, ICCCM_WITHDRAWN_STATE);
 	weston_wm_window_set_virtual_desktop(window, -1);
@@ -1053,6 +1028,7 @@ weston_wm_window_draw_decoration(void *data)
 	struct weston_shell_interface *shell_interface =
 		&wm->server->compositor->shell_interface;
 	uint32_t flags = 0;
+	struct weston_view *view;
 
 	weston_wm_window_read_properties(window);
 
@@ -1094,8 +1070,8 @@ weston_wm_window_draw_decoration(void *data)
 						  window->width + 2,
 						  window->height + 2);
 		}
-		if (window->view)
-			weston_view_geometry_dirty(window->view);
+		wl_list_for_each(view, &window->surface->views, surface_link)
+			weston_view_geometry_dirty(view);
 
 		pixman_region32_fini(&window->surface->pending.input);
 
@@ -1121,6 +1097,7 @@ static void
 weston_wm_window_schedule_repaint(struct weston_wm_window *window)
 {
 	struct weston_wm *wm = window->wm;
+	struct weston_view *view;
 	int width, height;
 
 	if (window->frame_id == XCB_WINDOW_NONE) {
@@ -1133,8 +1110,8 @@ weston_wm_window_schedule_repaint(struct weston_wm_window *window)
 				pixman_region32_init_rect(&window->surface->pending.opaque, 0, 0,
 							  width, height);
 			}
-			if (window->view)
-				weston_view_geometry_dirty(window->view);
+			wl_list_for_each(view, &window->surface->views, surface_link)
+				weston_view_geometry_dirty(view);
 		}
 		return;
 	}
@@ -1201,6 +1178,7 @@ weston_wm_window_create(struct weston_wm *wm,
 	window->height = height;
 	window->x = x;
 	window->y = y;
+	window->pos_dirty = 0;
 
 	geometry_reply = xcb_get_geometry_reply(wm->conn, geometry_cookie, NULL);
 	/* technically we should use XRender and check the visual format's
@@ -1496,7 +1474,6 @@ surface_destroy(struct wl_listener *listener, void *data)
 	 * Don't try to use it later. */
 	window->shsurf = NULL;
 	window->surface = NULL;
-	window->view = NULL;
 }
 
 static void
@@ -2274,9 +2251,6 @@ weston_wm_create(struct weston_xserver *wxs, int fd)
 	wm->activate_listener.notify = weston_wm_window_activate;
 	wl_signal_add(&wxs->compositor->activate_signal,
 		      &wm->activate_listener);
-	wm->transform_listener.notify = weston_wm_window_transform;
-	wl_signal_add(&wxs->compositor->transform_signal,
-		      &wm->transform_listener);
 	wm->kill_listener.notify = weston_wm_kill_client;
 	wl_signal_add(&wxs->compositor->kill_signal,
 		      &wm->kill_listener);
@@ -2305,7 +2279,6 @@ weston_wm_destroy(struct weston_wm *wm)
 	wl_list_remove(&wm->selection_listener.link);
 	wl_list_remove(&wm->activate_listener.link);
 	wl_list_remove(&wm->kill_listener.link);
-	wl_list_remove(&wm->transform_listener.link);
 	wl_list_remove(&wm->create_surface_listener.link);
 
 	free(wm);
@@ -2396,8 +2369,35 @@ send_configure(struct weston_surface *surface, int32_t width, int32_t height)
 				       weston_wm_window_configure, window);
 }
 
+static void
+send_position(struct weston_surface *surface, int32_t x, int32_t y)
+{
+	struct weston_wm_window *window = get_wm_window(surface);
+	struct weston_wm *wm;
+	uint32_t mask, values[2];
+
+	if (!window || !window->wm)
+		return;
+
+	wm = window->wm;
+	/* We use pos_dirty to tell whether a configure message is in flight.
+	 * This is needed in case we send two configure events in a very
+	 * short time, since window->x/y is set in after a roundtrip, hence
+	 * we cannot just check if the current x and y are different. */
+	if (window->x != x || window->y != y || window->pos_dirty) {
+		window->pos_dirty = 1;
+		values[0] = x;
+		values[1] = y;
+		mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y;
+
+		xcb_configure_window(wm->conn, window->frame_id, mask, values);
+		xcb_flush(wm->conn);
+	}
+}
+
 static const struct weston_shell_client shell_client = {
-	send_configure
+	send_configure,
+	send_position
 };
 
 static int
@@ -2488,9 +2488,6 @@ xserver_map_shell_surface(struct weston_wm_window *window,
 	if (!shell_interface->create_shell_surface)
 		return;
 
-	if (!shell_interface->get_primary_view)
-		return;
-
 	if (window->surface->configure) {
 		weston_log("warning, unexpected in %s: "
 			   "surface's configure hook is already set.\n",
@@ -2502,8 +2499,6 @@ xserver_map_shell_surface(struct weston_wm_window *window,
 		shell_interface->create_shell_surface(shell_interface->shell,
 						      window->surface,
 						      &shell_client);
-	window->view = shell_interface->get_primary_view(shell_interface->shell,
-							 window->shsurf);
 
 	if (window->name)
 		shell_interface->set_title(window->shsurf, window->name);
