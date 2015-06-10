@@ -337,6 +337,28 @@ fbdev_backend_la_SOURCES =			\
 	$(INPUT_BACKEND_SOURCES)
 endif
 
+if ENABLE_HWCOMPOSER_COMPOSITOR
+module_LTLIBRARIES += hwcomposer-backend.la
+hwcomposer_backend_la_LDFLAGS = -module -avoid-version
+hwcomposer_backend_la_LIBADD =			\
+	$(COMPOSITOR_LIBS)			\
+	$(HWCOMPOSER_COMPOSITOR_LIBS)		\
+	$(HWCOMPOSER_EGL_LIBS)			\
+	$(INPUT_BACKEND_LIBS)			\
+	libsession-helper.la			\
+	libshared.la
+hwcomposer_backend_la_CFLAGS =			\
+	$(COMPOSITOR_CFLAGS)			\
+	$(EGL_CFLAGS)				\
+	$(HWCOMPOSER_COMPOSITOR_CFLAGS)		\
+	$(HWCOMPOSER_EGL_CFLAGS)		\
+	$(PIXMAN_CFLAGS)			\
+	$(GCC_CFLAGS)
+hwcomposer_backend_la_SOURCES =			\
+	src/compositor-hwcomposer.c		\
+	$(INPUT_BACKEND_SOURCES)
+endif
+
 if ENABLE_RDP_COMPOSITOR
 module_LTLIBRARIES += rdp-backend.la
 rdp_backend_la_LDFLAGS = -module -avoid-version

@@ -36,6 +36,7 @@ weston compositor
 %reconfigure --disable-static \
     --disable-documentation --disable-xwayland --disable-x11-compositor \
     --disable-drm-compositor --disable-rpi-compositor --disable-fbdev-compositor \
+    --enable-hwcomposer-compositor
 
 make %{?jobs:-j%jobs}
 

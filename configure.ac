@@ -204,6 +204,19 @@ AS_IF([test x$enable_fbdev_compositor = xyes], [
   PKG_CHECK_MODULES([FBDEV_COMPOSITOR], [libudev >= 136 mtdev >= 1.1.0])
 ])
 
+AC_ARG_ENABLE([hwcomposer-compositor], [  --enable-hwcomposer-compositor],,
+              enable_hwcomposer_compositor=no)
+AM_CONDITIONAL([ENABLE_HWCOMPOSER_COMPOSITOR],
+               [test x$enable_hwcomposer_compositor = xyes])
+AS_IF([test x$enable_hwcomposer_compositor = xyes], [
+  AC_DEFINE([BUILD_HWCOMPOSER_COMPOSITOR], [1], [Build the hwcomposer compositor])
+  PKG_CHECK_MODULES([HWCOMPOSER_COMPOSITOR], [libudev >= 136 mtdev >= 1.1.0 android-headers libhardware hybris-egl-platform egl])
+  PKG_CHECK_MODULES([HWCOMPOSER_EGL], [hwcomposer-egl],
+                     [have_hwcomposer_egl="yes"
+                      AC_DEFINE([HAVE_HWCOMPOSER_EGL], [1], [have the hwcomposer-egl library])],
+                     [AC_MSG_WARN([hwcomposer-egl not found.])])
+])
+
 AC_ARG_ENABLE([rdp-compositor], [  --enable-rdp-compositor],,
               enable_rdp_compositor=no)
 AM_CONDITIONAL([ENABLE_RDP_COMPOSITOR],
@@ -540,6 +553,7 @@ AC_MSG_RESULT([
 	Headless Compositor		${enable_headless_compositor}
 	RPI Compositor			${enable_rpi_compositor}
 	FBDEV Compositor		${enable_fbdev_compositor}
+	Hwcomposer Compositor		${enable_hwcomposer_compositor}
 	RDP Compositor			${enable_rdp_compositor}
 	Screen Sharing			${enable_screen_sharing}
 
