@@ -4610,6 +4610,20 @@ weston_load_module(const char *name, const char *entrypoint)
 	return init;
 }
 
+WL_EXPORT struct weston_module *
+weston_compositor_init_module(struct weston_compositor *compositor,
+			      const char *module,
+			      struct weston_module_config *config)
+{
+	struct weston_module *(*init)(struct weston_compositor *compositor,
+				      struct weston_module_config *config);
+
+	init = weston_load_module(module, "module_init2");
+	if (!init)
+		return NULL;
+
+	return init(compositor, config);
+}
 
 /** Destroys the compositor.
  *

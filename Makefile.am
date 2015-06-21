@@ -988,7 +988,10 @@ xwayland_la_SOURCES =				\
 	xwayland/launcher.c			\
 	xwayland/hash.c				\
 	xwayland/hash.h				\
+	xwayland/module-xwayland.h		\
 	shared/helpers.h
+westoninclude_HEADERS +=			\
+	xwayland/module-xwayland.h
 endif
 
 

@@ -622,6 +622,13 @@ struct weston_backend {
 struct weston_backend_config {
 };
 
+struct weston_module_config {
+
+};
+
+struct weston_module {
+};
+
 struct weston_compositor {
 	struct wl_signal destroy_signal;
 
@@ -1577,6 +1584,9 @@ int
 module_init(struct weston_compositor *compositor,
 	    int *argc, char *argv[],
 	    struct weston_config *config);
+struct weston_module *
+module_init2(struct weston_compositor *compositor,
+	     struct weston_module_config *config);
 
 void
 weston_transformed_coord(int width, int height,
@@ -1596,6 +1606,10 @@ weston_transformed_region(int width, int height,
 
 void *
 weston_load_module(const char *name, const char *entrypoint);
+struct weston_module *
+weston_compositor_init_module(struct weston_compositor *compositor,
+			      const char *module,
+			      struct weston_module_config *config);
 
 int
 weston_parse_transform(const char *transform, uint32_t *out);
