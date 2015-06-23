@@ -4666,6 +4666,36 @@ weston_compositor_set_default_pointer_grab(struct weston_compositor *ec,
 	}
 }
 
+WL_EXPORT void
+weston_compositor_set_default_keyboard_grab(struct weston_compositor *ec,
+			const struct weston_keyboard_grab_interface *interface)
+{
+	struct weston_seat *seat;
+
+	ec->default_keyboard_grab = interface;
+	wl_list_for_each(seat, &ec->seat_list, link) {
+		if (seat->keyboard) {
+			weston_keyboard_set_default_grab(seat->keyboard,
+							 interface);
+		}
+	}
+}
+
+WL_EXPORT void
+weston_compositor_set_default_touch_grab(struct weston_compositor *ec,
+			const struct weston_touch_grab_interface *interface)
+{
+	struct weston_seat *seat;
+
+	ec->default_touch_grab = interface;
+	wl_list_for_each(seat, &ec->seat_list, link) {
+		if (seat->touch) {
+			weston_touch_set_default_grab(seat->touch,
+						      interface);
+		}
+	}
+}
+
 WL_EXPORT int
 weston_compositor_set_presentation_clock(struct weston_compositor *compositor,
 					 clockid_t clk_id)
@@ -5381,6 +5411,8 @@ int main(int argc, char *argv[])
 		idle_time = 300; /* default idle timeout, in seconds */
 	ec->idle_time = idle_time;
 	ec->default_pointer_grab = NULL;
+	ec->default_keyboard_grab = NULL;
+	ec->default_touch_grab = NULL;
 	ec->exit_code = EXIT_SUCCESS;
 
 	weston_compositor_log_capabilities(ec);

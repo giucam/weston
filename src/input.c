@@ -516,7 +516,7 @@ weston_pointer_set_default_grab(struct weston_pointer *pointer,
 }
 
 WL_EXPORT struct weston_keyboard *
-weston_keyboard_create(void)
+weston_keyboard_create(struct weston_seat *seat)
 {
 	struct weston_keyboard *keyboard;
 
@@ -529,6 +529,8 @@ weston_keyboard_create(void)
 	wl_list_init(&keyboard->focus_resource_listener.link);
 	keyboard->focus_resource_listener.notify = keyboard_focus_resource_destroyed;
 	wl_array_init(&keyboard->keys);
+	weston_keyboard_set_default_grab(keyboard,
+				        seat->compositor->default_keyboard_grab);
 	keyboard->default_grab.interface = &default_keyboard_grab_interface;
 	keyboard->default_grab.keyboard = keyboard;
 	keyboard->grab = &keyboard->default_grab;
@@ -559,6 +561,17 @@ weston_keyboard_destroy(struct weston_keyboard *keyboard)
 	free(keyboard);
 }
 
+void
+weston_keyboard_set_default_grab(struct weston_keyboard *keyboard,
+		const struct weston_keyboard_grab_interface *interface)
+{
+	if (interface)
+		keyboard->default_grab.interface = interface;
+	else
+		keyboard->default_grab.interface =
+			&default_keyboard_grab_interface;
+}
+
 static void
 weston_touch_reset_state(struct weston_touch *touch)
 {
@@ -566,7 +579,7 @@ weston_touch_reset_state(struct weston_touch *touch)
 }
 
 WL_EXPORT struct weston_touch *
-weston_touch_create(void)
+weston_touch_create(struct weston_seat *seat)
 {
 	struct weston_touch *touch;
 
@@ -580,6 +593,8 @@ weston_touch_create(void)
 	touch->focus_view_listener.notify = touch_focus_view_destroyed;
 	wl_list_init(&touch->focus_resource_listener.link);
 	touch->focus_resource_listener.notify = touch_focus_resource_destroyed;
+	weston_touch_set_default_grab(touch,
+				      seat->compositor->default_touch_grab);
 	touch->default_grab.interface = &default_touch_grab_interface;
 	touch->default_grab.touch = touch;
 	touch->grab = &touch->default_grab;
@@ -596,6 +611,17 @@ weston_touch_destroy(struct weston_touch *touch)
 	wl_list_remove(&touch->focus_view_listener.link);
 	wl_list_remove(&touch->focus_resource_listener.link);
 	free(touch);
+}
+
+void
+weston_touch_set_default_grab(struct weston_touch *touch,
+		const struct weston_touch_grab_interface *interface)
+{
+	if (interface)
+		touch->default_grab.interface = interface;
+	else
+		touch->default_grab.interface =
+			&default_touch_grab_interface;
 }
 
 static void
@@ -2118,7 +2144,7 @@ weston_seat_init_keyboard(struct weston_seat *seat, struct xkb_keymap *keymap)
 		return 0;
 	}
 
-	keyboard = weston_keyboard_create();
+	keyboard = weston_keyboard_create(seat);
 	if (keyboard == NULL) {
 		weston_log("failed to allocate weston keyboard struct\n");
 		return -1;
@@ -2259,7 +2285,7 @@ weston_seat_init_touch(struct weston_seat *seat)
 		return;
 	}
 
-	touch = weston_touch_create();
+	touch = weston_touch_create(seat);
 	if (touch == NULL)
 		return;
 
