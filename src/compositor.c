@@ -4548,7 +4548,7 @@ weston_surface_share_buffer(struct weston_surface *surface,
 
 	shm_buffer = wl_shm_buffer_get(surface->buffer_ref.buffer->resource);
 	if (!shm_buffer)
-		return NULL;
+		return c->renderer->create_shared_buffer(surface, client);
 
 	global_res = wl_resource_find_for_client(&c->shm_buffer_pool_list,
 						 client);

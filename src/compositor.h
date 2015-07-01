@@ -602,6 +602,9 @@ struct weston_renderer {
 				    void *target, size_t size,
 				    int src_x, int src_y,
 				    int width, int height);
+	struct weston_shared_buffer *
+		(*create_shared_buffer)(struct weston_surface *surface,
+					struct wl_client *client);
 };
 
 enum weston_capability {

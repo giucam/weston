@@ -59,6 +59,12 @@ typedef EGLSurface (*PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC) (EGLDisplay dpy, 
 #define EGL_PLATFORM_X11_KHR 0x31D5
 #endif
 
+#ifndef EGL_WL_create_shared_buffer
+typedef void *EGLSharedBufferWL;
+typedef EGLSharedBufferWL *(*PFNEGLCREATESHAREDBUFFERWL)(EGLDisplay dpy, struct wl_resource *resource, struct wl_client *client, struct wl_resource **buffer_resource);
+typedef void (*PFNEGLDESTROYSHAREDBUFFERWL)(EGLSharedBufferWL buffer);
+#endif
+
 #define NO_EGL_PLATFORM 0
 
 enum gl_renderer_border_side {

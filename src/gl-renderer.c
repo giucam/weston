@@ -141,6 +141,9 @@ struct gl_renderer {
 
 	PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC create_platform_window;
 
+	PFNEGLCREATESHAREDBUFFERWL create_shared_buffer;
+	PFNEGLDESTROYSHAREDBUFFERWL destroy_shared_buffer;
+
 	int has_unpack_subimage;
 
 	PFNEGLBINDWAYLANDDISPLAYWL bind_display;
@@ -1547,6 +1550,56 @@ gl_renderer_surface_copy_content(struct weston_surface *surface,
 	return 0;
 }
 
+struct gl_shared_buffer {
+	struct weston_shared_buffer base;
+	struct gl_renderer *renderer;
+	EGLSharedBufferWL egl_buffer;
+};
+
+static void
+gl_shared_buffer_destroy(struct weston_shared_buffer *base)
+{
+	struct gl_shared_buffer *buffer = (struct gl_shared_buffer *)base;
+	buffer->renderer->destroy_shared_buffer(buffer->egl_buffer);
+	free(buffer);
+}
+
+static struct weston_shared_buffer *
+gl_renderer_create_shared_buffer(struct weston_surface *surface,
+                                 struct wl_client *client)
+{
+	struct gl_renderer *gr = get_renderer(surface->compositor);
+	struct weston_buffer *source = surface->buffer_ref.buffer;
+	struct gl_shared_buffer *buffer;
+	EGLSharedBufferWL egl_buffer;
+	struct wl_resource *resource = NULL;
+	EGLint format;
+
+	if (gr->query_buffer(gr->egl_display, (void *) source->resource,
+				  EGL_TEXTURE_FORMAT, &format)) {
+		egl_buffer = gr->create_shared_buffer(gr->egl_display,
+						      source->resource,
+						      client, &resource);
+		if (!egl_buffer) {
+			return NULL;
+		}
+
+		buffer = zalloc(sizeof *buffer);
+		if (!buffer)
+			return NULL;
+
+		buffer->base.resource = resource;
+		buffer->base.destroy = gl_shared_buffer_destroy;
+		buffer->renderer = gr;
+		buffer->egl_buffer = egl_buffer;
+
+		return &buffer->base;
+	} else {
+		weston_log("unhandled buffer type!\n");
+		return NULL;
+	}
+}
+
 static void
 surface_state_destroy(struct gl_surface_state *gs, struct gl_renderer *gr)
 {
@@ -2191,6 +2244,13 @@ gl_renderer_setup_egl_extensions(struct weston_compositor *ec)
 		gr->has_configless_context = 1;
 #endif
 
+	if (strstr(extensions, "EGL_WL_create_shared_buffer")) {
+		gr->create_shared_buffer =
+			(void *)eglGetProcAddress("eglCreateSharedBufferWL");
+		gr->destroy_shared_buffer =
+			(void *)eglGetProcAddress("eglDestroySharedBufferWL");
+	}
+
 	renderer_setup_egl_client_extensions(gr);
 
 	return 0;
@@ -2322,6 +2382,7 @@ gl_renderer_create(struct weston_compositor *ec, EGLenum platform,
 	gr->base.surface_get_content_size =
 		gl_renderer_surface_get_content_size;
 	gr->base.surface_copy_content = gl_renderer_surface_copy_content;
+        gr->base.create_shared_buffer = gl_renderer_create_shared_buffer;
 	gr->egl_display = NULL;
 
 	/* extension_suffix is supported */
