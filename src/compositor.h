@@ -573,6 +573,11 @@ struct weston_plane {
 	struct wl_list link;
 };
 
+struct weston_shared_buffer {
+	struct wl_resource *resource;
+	void (*destroy)(struct weston_shared_buffer *buf);
+};
+
 struct weston_renderer {
 	int (*read_pixels)(struct weston_output *output,
 			       pixman_format_code_t format, void *pixels,
@@ -661,6 +666,7 @@ struct weston_compositor {
 	struct wl_list touch_binding_list;
 	struct wl_list axis_binding_list;
 	struct wl_list debug_binding_list;
+	struct wl_list shm_buffer_pool_list;
 
 	uint32_t state;
 	struct wl_event_source *idle_source;
@@ -1588,6 +1594,14 @@ weston_parse_transform(const char *transform, uint32_t *out);
 
 const char *
 weston_transform_to_string(uint32_t output_transform);
+
+struct weston_shared_buffer *
+weston_surface_share_buffer(struct weston_surface *surface,
+			    struct wl_client *client);
+struct wl_resource *
+weston_shared_buffer_get_resource(struct weston_shared_buffer *buffer);
+void
+weston_shared_buffer_destroy(struct weston_shared_buffer *buffer);
 
 #ifdef  __cplusplus
 }

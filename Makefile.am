@@ -106,7 +106,9 @@ nodist_weston_SOURCES =					\
 	protocol/presentation_timing-protocol.c		\
 	protocol/presentation_timing-server-protocol.h	\
 	protocol/scaler-protocol.c			\
-	protocol/scaler-server-protocol.h
+	protocol/scaler-server-protocol.h		\
+	protocol/shared-buffer-protocol.c		\
+	protocol/shared-buffer-server-protocol.h
 
 BUILT_SOURCES += $(nodist_weston_SOURCES)
 
@@ -722,7 +724,9 @@ BUILT_SOURCES +=					\
 	protocol/ivi-hmi-controller-protocol.c		\
 	protocol/ivi-hmi-controller-client-protocol.h	\
 	protocol/ivi-application-protocol.c		\
-	protocol/ivi-application-client-protocol.h
+	protocol/ivi-application-client-protocol.h	\
+	protocol/shared-buffer-protocol.c			\
+	protocol/shared-buffer-server-protocol.h
 
 westondatadir = $(datadir)/weston
 dist_westondata_DATA =				\

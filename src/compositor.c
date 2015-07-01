@@ -58,6 +58,7 @@
 #include "compositor.h"
 #include "scaler-server-protocol.h"
 #include "presentation_timing-server-protocol.h"
+#include "shared-buffer-server-protocol.h"
 #include "../shared/os-compatibility.h"
 #include "git-version.h"
 #include "version.h"
@@ -4451,6 +4452,170 @@ compositor_bind(struct wl_client *client,
 }
 
 static void
+shm_shared_pool_destroy(struct wl_resource *resource)
+{
+	wl_list_remove(wl_resource_get_link(resource));
+}
+
+static void
+bind_shm_shared_pool(struct wl_client *client,
+		     void *data, uint32_t version, uint32_t id)
+{
+	struct weston_compositor *compositor = data;
+	struct wl_resource *resource;
+
+	resource = wl_resource_create(client,
+				      &_wl_shm_shared_buffer_pool_interface,
+				      version, id);
+	if (resource == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
+	wl_list_insert(&compositor->shm_buffer_pool_list,
+		       wl_resource_get_link(resource));
+	wl_resource_set_implementation(resource, NULL,
+				       compositor, shm_shared_pool_destroy);
+}
+
+struct shm_shared_buffer {
+	struct weston_shared_buffer base;
+	struct wl_resource *handle_resource;
+};
+
+static void
+shm_shared_buffer_destroy(struct weston_shared_buffer *base)
+{
+	struct shm_shared_buffer *buffer = (struct shm_shared_buffer *)base;
+	_wl_shm_shared_buffer_handle_send_destroyed(buffer->handle_resource);
+}
+
+static void
+shm_shared_buffer_handle_destroy(struct wl_resource *r)
+{
+	struct shm_shared_buffer *buffer = wl_resource_get_user_data(r);
+	free(buffer);
+}
+
+static void
+shm_shared_buffer_handle_handle_destroy(struct wl_client *c, struct wl_resource *r)
+{
+	wl_resource_destroy(r);
+}
+
+static const struct _wl_shm_shared_buffer_handle_interface
+				shm_shared_buffer_handle_implementation = {
+	shm_shared_buffer_handle_handle_destroy,
+};
+
+/** Share a buffer from a client with another client.
+ *
+ * This function creates an object that maps a buffer used on a surface
+ * to a new buffer object which is sent to a specified client. The client
+ * can access the shared data of the buffer and use it.
+ * Returns NULL on failure and a ::weston_shared_buffer object on success,
+ * which the caller can use to retrieve the wl_resource referencing the
+ * _wl_shared_buffer sent to the client.
+ * The caller is responsible for setting an implementation on the resource
+ * backing the new _wl_shared_buffer object, and to keep a reference to
+ * the source buffer.
+ *
+ * \param surface The source surface.
+ * \param client The destination client.
+ *
+ * \sa weston_shared_buffer_get_resource
+ * \sa weston_shared_buffer_destroy
+ */
+WL_EXPORT struct weston_shared_buffer *
+weston_surface_share_buffer(struct weston_surface *surface,
+			    struct wl_client *client)
+{
+	struct weston_compositor *c = surface->compositor;
+	struct wl_resource *global_res;
+	struct wl_shm_buffer *shm_buffer;
+	struct shm_shared_buffer *shared_buffer;
+	int32_t width;
+	int32_t height;
+	int32_t stride;
+	uint32_t format;
+	int fd;
+	int offset;
+
+	if (!surface->buffer_ref.buffer)
+		return NULL;
+	if (!surface->buffer_ref.buffer->resource)
+		return NULL;
+
+	shm_buffer = wl_shm_buffer_get(surface->buffer_ref.buffer->resource);
+	if (!shm_buffer)
+		return NULL;
+
+	global_res = wl_resource_find_for_client(&c->shm_buffer_pool_list,
+						 client);
+	if (!global_res)
+		return NULL;
+
+	shared_buffer = zalloc(sizeof *shared_buffer);
+	if (!shared_buffer)
+		return NULL;
+
+	width = wl_shm_buffer_get_width(shm_buffer);
+	height = wl_shm_buffer_get_height(shm_buffer);
+	stride = wl_shm_buffer_get_stride(shm_buffer);
+	format = wl_shm_buffer_get_format(shm_buffer);
+	fd = wl_shm_buffer_get_fd(shm_buffer);
+	offset = wl_shm_buffer_get_offset(shm_buffer);
+
+	shared_buffer->handle_resource =
+		wl_resource_create(client,
+				   &_wl_shm_shared_buffer_handle_interface,
+				   wl_resource_get_version(global_res), 0);
+	shared_buffer->base.destroy = shm_shared_buffer_destroy;
+	shared_buffer->base.resource =
+		wl_resource_create(client, &_wl_shared_buffer_interface,
+				   wl_resource_get_version(global_res), 0);
+
+	wl_resource_set_implementation(shared_buffer->handle_resource,
+				       &shm_shared_buffer_handle_implementation,
+				       shared_buffer,
+				       shm_shared_buffer_handle_destroy);
+
+	_wl_shm_shared_buffer_pool_send_new_buffer(global_res,
+						   shared_buffer->handle_resource,
+						   shared_buffer->base.resource, fd,
+						   width, height, stride,
+						   format, offset);
+
+	return &shared_buffer->base;
+}
+
+/** Get the shared buffer resource.
+ *
+ * Returns the _wl_shared_buffer resource sent to the target client.
+ *
+ * \param buffer The shared buffer object.
+ *
+ * \sa weston_surface_share_buffer
+ */
+WL_EXPORT struct wl_resource *
+weston_shared_buffer_get_resource(struct weston_shared_buffer *buffer)
+{
+	return buffer->resource;
+}
+
+/** Destroy a ::weston_shared_buffer object.
+ *
+ * \param buffer The shared buffer object.
+ *
+ * \sa weston_surface_share_buffer
+ */
+WL_EXPORT void
+weston_shared_buffer_destroy(struct weston_shared_buffer *buffer)
+{
+	buffer->destroy(buffer);
+}
+
+static void
 log_uname(void)
 {
 	struct utsname usys;
@@ -4543,6 +4708,11 @@ weston_compositor_init(struct weston_compositor *ec,
 			      ec, bind_presentation))
 		return -1;
 
+	if (!wl_global_create(ec->wl_display,
+		              &_wl_shm_shared_buffer_pool_interface, 1,
+		              ec, bind_shm_shared_pool))
+		return -1;
+
 	wl_list_init(&ec->view_list);
 	wl_list_init(&ec->plane_list);
 	wl_list_init(&ec->layer_list);
@@ -4554,6 +4724,7 @@ weston_compositor_init(struct weston_compositor *ec,
 	wl_list_init(&ec->touch_binding_list);
 	wl_list_init(&ec->axis_binding_list);
 	wl_list_init(&ec->debug_binding_list);
+	wl_list_init(&ec->shm_buffer_pool_list);
 
 	weston_plane_init(&ec->primary_plane, ec, 0, 0);
 	weston_compositor_stack_plane(ec, &ec->primary_plane, NULL);

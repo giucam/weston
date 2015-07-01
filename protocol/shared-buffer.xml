@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="_wl_shared_buffer">
+
+    <copyright>
+        Copyright © 2015 Jolla, Ltd.
+
+        Permission to use, copy, modify, distribute, and sell this
+        software and its documentation for any purpose is hereby granted
+        without fee, provided that the above copyright notice appear in
+        all copies and that both that copyright notice and this permission
+        notice appear in supporting documentation, and that the name of
+        the copyright holders not be used in advertising or publicity
+        pertaining to distribution of the software without specific,
+        written prior permission.  The copyright holders make no
+        representations about the suitability of this software for any
+        purpose.  It is provided "as is" without express or implied
+        warranty.
+
+        THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS
+        SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+        FITNESS, IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+        SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+        AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+        ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+        THIS SOFTWARE.
+    </copyright>
+
+    <interface name="_wl_shared_buffer" version="1">
+        <description summary="A buffer shared from the compositor to a client">
+            A _wl_shared_buffer is similar to a wl_buffer, but works in the opposite
+            direction, from the compositor to the client. The compositor can create
+            a _wl_shared_buffer using a factory such as _wl_shm_shared_buffer_pool
+            and send it to the client via some event. The client can then read the
+            content of the buffer and use it.
+            When the client does not need to access the buffer anymore it should call
+            the release request.
+        </description>
+
+        <request name="destroy" type="destructor">
+            <description summary="Destroy the buffer">
+                The destroy request destroys the _wl_shared_buffer object and notifies
+                the compositor about it. This request should only be called by the
+                factory that created this object, when notified to do so.
+                This request should not be called when the user does not need to access
+                the content anymore, use the release request instead.
+            </description>
+        </request>
+
+        <request name="release">
+            <description summary="Release the buffer">
+                This request notifies the compositor that the client does not need to
+                access the content of the buffer anymore. The client should not attempt
+                to read from the buffer after calling this request, else artifacts may
+                appear.
+                The compositor may decide to destroy this buffer object after receiving
+                this request.
+            </description>
+        </request>
+    </interface>
+
+    <interface name="_wl_shm_shared_buffer_pool" version="1">
+        <description summary="A factory for shm based _wl_shared_buffer">
+            The _wl_shm_shared_buffer_pool interface is a factory for _wl_shared_buffer,
+            using shared memory data. A new buffer is created via the new_buffer event,
+            but must be sent to the client via another event not defined in this extension,
+            akin to wl_surface::attach.
+        </description>
+
+        <event name="new_buffer">
+            <description summary="Advertize a new buffer">
+                This event notifies the client of a new _wl_shared_buffer object.
+                The data in the buffer can be read by mmapping the given fd, starting
+                at the given offset.
+                The format of the buffer is guaranteed to be a valid wl_shm buffer format,
+                and one of the format advertized by the wl_shm.format event.
+            </description>
+            <arg name="handle" type="new_id" interface="_wl_shm_shared_buffer_handle"/>
+            <arg name="buffer" type="new_id" interface="_wl_shared_buffer"/>
+            <arg name="fd" type="fd" summary="The fd of the mmapped file"/>
+            <arg name="width" type="int" summary="The width of the buffer"/>
+            <arg name="height" type="int" summary="The height of the buffer"/>
+            <arg name="stride" type="int" summary="The stride of the buffer, in bytes"/>
+            <arg name="format" type="int" summary="The format of the buffer"/>
+            <arg name="offset" type="int" summary="The offset of the buffer in the data"/>
+        </event>
+    </interface>
+
+    <interface name="_wl_shm_shared_buffer_handle" version="1">
+        <description summary="A handle for a _wl_shared_buffer">
+            This interface is helper interface used by _wl_shm_shared_buffer_pool and
+            referencing a _wl_shared_buffer object.
+        </description>
+
+        <request name="destroy" type="destructor">
+            <description summary="Destroy this object">
+                This request should only be called alongside the _wl_shared_buffer.destroy
+                request on the referenced _wl_shared_buffer object, only after receiving
+                the destroyed event.
+            </description>
+        </request>
+
+        <event name="destroyed">
+            <description summary="Ask the client to destroy the handle">
+                The destroyed event is sent by the compositor when the buffer is used no
+                more and should be destroyed. The event is guaranteed to never be called
+                before the client calls _wl_shared_buffer.release on the buffer associated
+                with this handle, and the compositor may send this event after receiving
+                the release request on the buffer.
+            </description>
+        </event>
+    </interface>
+
+</protocol>
