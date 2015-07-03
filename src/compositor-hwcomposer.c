@@ -110,6 +110,7 @@ struct hwc {
 	struct hwc_output *(*create_hwc_output)(struct hwcomposer_output *o);
 	unsigned int (*refresh_rate)(struct hwcomposer_compositor *c);
 	void (*output_frame)(struct hwcomposer_output *o);
+	void (*set_dpms)(struct hwcomposer_output *o, enum dpms_enum dpms);
 };
 
 struct hwc_output {
@@ -336,6 +337,13 @@ hwcomposer_frame_buffer_destroy(struct hwcomposer_output *output)
 
 static void hwcomposer_output_destroy(struct weston_output *base);
 
+static void
+hwcomposer_output_set_dpms(struct weston_output *base, enum dpms_enum dpms)
+{
+	struct hwcomposer_output *output = (struct hwcomposer_output *)base;
+	output->compositor->hwc->set_dpms(output, dpms);
+}
+
 static int
 hwcomposer_output_create(struct hwcomposer_compositor *compositor,
                     const char *device)
@@ -367,6 +375,7 @@ hwcomposer_output_create(struct hwcomposer_compositor *compositor,
 	output->base.start_repaint_loop = hwcomposer_output_start_repaint_loop;
 	output->base.repaint = hwcomposer_output_repaint;
 	output->base.destroy = hwcomposer_output_destroy;
+	output->base.set_dpms = hwcomposer_output_set_dpms;
 
 	/* only one static mode in list */
 	output->mode.flags =
@@ -609,6 +618,12 @@ hwc0_output_frame(struct hwcomposer_output *o)
 }
 
 static void
+hwc0_output_set_dpms(struct hwcomposer_output *out, enum dpms_enum dpms)
+{
+
+}
+
+static void
 create_hwc0(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *device)
 {
 	struct hwc0 *hwc;
@@ -622,6 +637,7 @@ create_hwc0(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *d
 	hwc->base.create_hwc_output = hwc0_create_hwc_output;
 	hwc->base.refresh_rate = hwc0_refresh_rate;
 	hwc->base.output_frame = hwc0_output_frame;
+	hwc->base.set_dpms = hwc0_output_set_dpms;
 
 	hwc->composer_device = (hwc_composer_device_t *)device;
 
@@ -756,6 +772,27 @@ hwc11_output_frame(struct hwcomposer_output *o)
 }
 
 static void
+hwc11_output_set_dpms(struct hwcomposer_output *out, enum dpms_enum dpms)
+{
+	struct hwc11 *hwc = (struct hwc11 *)out->compositor->hwc;
+	int blank = dpms != WESTON_DPMS_ON;
+	if (blank)
+		hwc->composer_device->eventControl(hwc->composer_device,
+						   out->index,
+						   HWC_EVENT_VSYNC, 0);
+
+	hwc->composer_device->blank(hwc->composer_device, out->index,
+				    blank);
+
+	if (!blank) {
+		hwc->composer_device->eventControl(hwc->composer_device,
+						   out->index,
+						   HWC_EVENT_VSYNC, 1);
+		weston_output_schedule_repaint(&out->base);
+	}
+}
+
+static void
 hwc11_callback_vsync(const struct hwc_procs *procs, int display, int64_t timestamp)
 {
 	struct hwc11 *hwc = container_of(procs, struct hwc11, procs);
@@ -806,6 +843,7 @@ create_hwc11(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *
 	hwc->base.create_hwc_output = hwc11_create_hwc_output;
 	hwc->base.refresh_rate = hwc11_refresh_rate;
 	hwc->base.output_frame = hwc11_output_frame;
+	hwc->base.set_dpms = hwc11_output_set_dpms;
 
 	hwc->composer_device = (hwc_composer_device_1_t *)device;
 	hwc->procs.vsync = hwc11_callback_vsync;
