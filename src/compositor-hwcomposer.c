@@ -57,6 +57,14 @@
 #include "gl-renderer.h"
 #include "presentation_timing-server-protocol.h"
 
+// #define HWC_DEBUG
+
+#ifdef HWC_DEBUG
+#define HWC_LOG(...) weston_log("HWC: " __VA_ARGS__)
+#else
+#define HWC_LOG(...)
+#endif
+
 struct hwcomposer_compositor {
 	struct weston_compositor base;
 	uint32_t prev_state;
@@ -109,8 +117,9 @@ struct hwc {
 
 	struct hwc_output *(*create_hwc_output)(struct hwcomposer_output *o);
 	unsigned int (*refresh_rate)(struct hwcomposer_compositor *c);
-	void (*output_frame)(struct hwcomposer_output *o);
 	void (*set_dpms)(struct hwcomposer_output *o, enum dpms_enum dpms);
+	void (*output_repaint)(struct hwcomposer_output *o, pixman_region32_t *damage);
+	void (*assign_planes)(struct hwcomposer_output *o);
 };
 
 struct hwc_output {
@@ -147,9 +156,31 @@ struct hwc11_output {
 	struct hwc_output base;
 	bool repainted;
 	hwc_display_contents_1_t *egl_surface_list;
+	struct weston_plane plane;
+	hwc_display_contents_1_t *layer_list;
+	struct wl_list layer_buffer_list;
+	struct wl_list new_layer_buffer_list;
+	bool use_egl;
+	struct ANativeWindowBuffer *last_egl_buffer;
+};
+
+struct hwc11_buffer_state {
+	struct wl_list link;
+	struct weston_view *view;
+	int layer;
+	EGLClientBuffer egl_buffer;
+	struct weston_buffer_reference buffer;
+	int release_fence_fd;
 };
 
 #endif
+
+typedef EGLBoolean (EGLAPIENTRYP Ptr_eglHybrisAcquireNativeBufferWL)(EGLDisplay dpy, struct wl_resource *wlBuffer, EGLClientBuffer *buffer);
+typedef EGLBoolean (EGLAPIENTRYP Ptr_eglHybrisNativeBufferHandle)(EGLDisplay dpy, EGLClientBuffer buffer, void **handle);
+typedef EGLBoolean (EGLAPIENTRYP Ptr_eglHybrisReleaseNativeBuffer)(EGLClientBuffer buffer);
+static Ptr_eglHybrisAcquireNativeBufferWL eglHybrisAcquireNativeBufferWL;
+static Ptr_eglHybrisNativeBufferHandle eglHybrisNativeBufferHandle;
+static Ptr_eglHybrisReleaseNativeBuffer eglHybrisReleaseNativeBuffer;
 
 struct gl_renderer_interface *gl_renderer;
 
@@ -183,12 +214,11 @@ hwcomposer_output_repaint(struct weston_output *base, pixman_region32_t *damage)
 	struct hwcomposer_compositor *fbc = output->compositor;
 	struct weston_compositor *ec = & fbc->base;
 
-	ec->renderer->repaint_output(base, damage);
 	/* Update the damage region. */
 	pixman_region32_subtract(&ec->primary_plane.damage,
 				&ec->primary_plane.damage, damage);
 
-	fbc->hwc->output_frame(output);
+	fbc->hwc->output_repaint(output, damage);
 
 	return 0;
 }
@@ -344,6 +374,16 @@ hwcomposer_output_set_dpms(struct weston_output *base, enum dpms_enum dpms)
 	output->compositor->hwc->set_dpms(output, dpms);
 }
 
+static void
+hwcomposer_assign_planes(struct weston_output *base)
+{
+	struct hwcomposer_output *out = (struct hwcomposer_output *)base;
+	struct hwcomposer_compositor *c =
+		(struct hwcomposer_compositor *)base->compositor;
+
+	c->hwc->assign_planes(out);
+}
+
 static int
 hwcomposer_output_create(struct hwcomposer_compositor *compositor,
                     const char *device)
@@ -376,6 +416,8 @@ hwcomposer_output_create(struct hwcomposer_compositor *compositor,
 	output->base.repaint = hwcomposer_output_repaint;
 	output->base.destroy = hwcomposer_output_destroy;
 	output->base.set_dpms = hwcomposer_output_set_dpms;
+	if (compositor->hwc->assign_planes)
+		output->base.assign_planes = hwcomposer_assign_planes;
 
 	/* only one static mode in list */
 	output->mode.flags =
@@ -612,8 +654,11 @@ hwc0_refresh_rate(struct hwcomposer_compositor *c)
 }
 
 static void
-hwc0_output_frame(struct hwcomposer_output *o)
+hwc0_output_repaint(struct hwcomposer_output *o, pixman_region32_t *damage)
 {
+	struct weston_compositor *ec = &o->compositor->base;
+
+	ec->renderer->repaint_output(&o->base, damage);
 	finish_frame_handler(o);
 }
 
@@ -630,14 +675,14 @@ create_hwc0(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *d
 
 	weston_log("hwcomposer version 0.\n");
 
-	hwc = malloc(sizeof *hwc);
+	hwc = zalloc(sizeof *hwc);
 	hwc->base.compositor = c;
 	hwc->base.hwc_module = module;
 	hwc->base.hwc_device = device;
 	hwc->base.create_hwc_output = hwc0_create_hwc_output;
 	hwc->base.refresh_rate = hwc0_refresh_rate;
-	hwc->base.output_frame = hwc0_output_frame;
 	hwc->base.set_dpms = hwc0_output_set_dpms;
+	hwc->base.output_repaint = hwc0_output_repaint;
 
 	hwc->composer_device = (hwc_composer_device_t *)device;
 
@@ -651,7 +696,7 @@ create_hwc10(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *
 {
 	struct hwc10 *hwc;
 
-	hwc = malloc(sizeof *hwc);
+	hwc = zalloc(sizeof *hwc);
 	hwc->base.compositor = c;
 	hwc->base.hwc_module = module;
 	hwc->base.hwc_device = device;
@@ -665,7 +710,7 @@ create_hwc10(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *
 #ifdef HWC_DEVICE_API_VERSION_1_1
 
 static void
-hwc11_populate_layer(hwc_layer_1_t *layer, int w, int h, buffer_handle_t handle, int32_t type)
+hwc11_populate_layer(hwc_layer_1_t *layer, int x, int y, int w, int h, buffer_handle_t handle, int32_t type)
 {
     layer->handle = handle;
     layer->hints = 0;
@@ -689,10 +734,10 @@ hwc11_populate_layer(hwc_layer_1_t *layer, int w, int h, buffer_handle_t handle,
     layer->sourceCrop.right = w;
     layer->sourceCrop.bottom = h;
 #endif
-    layer->displayFrame.left = 0;
-    layer->displayFrame.top = 0;
-    layer->displayFrame.right = w;
-    layer->displayFrame.bottom = h;
+    layer->displayFrame.left = x;
+    layer->displayFrame.top = y;
+    layer->displayFrame.right = x + w;
+    layer->displayFrame.bottom = y + h;
     layer->visibleRegionScreen.numRects = 1;
     layer->visibleRegionScreen.rects = &layer->displayFrame;
 }
@@ -714,16 +759,28 @@ hwc11_window_present(void *data, struct ANativeWindow *w, struct ANativeWindowBu
 	struct hwc11_output *hwco = (struct hwc11_output *)output->hwco;
 	hwc_composer_device_1_t *device = hwc->composer_device;
 
-	hwc11_update_layer(hwco->egl_surface_list->hwLayers, HWCNativeBufferGetFence(b), b->handle);
-	hwco->egl_surface_list->retireFenceFd = -1;
+	if (hwco->layer_list) {
+		hwc11_update_layer(&hwco->layer_list->hwLayers[0],
+				   HWCNativeBufferGetFence(b), b->handle);
 
-	assert(device->prepare(device, 1, &hwco->egl_surface_list) == 0);
-	assert(device->set(device, 1, &hwco->egl_surface_list) == 0);
+		HWC_LOG("layers + egl\n");
 
-	HWCNativeBufferSetFence(b, hwco->egl_surface_list->hwLayers[0].releaseFenceFd);
+		assert(device->prepare(device, 1, &hwco->layer_list) == 0);
+		assert(device->set(device, 1, &hwco->layer_list) == 0);
 
-	if (hwco->egl_surface_list->retireFenceFd != -1)
-		close(hwco->egl_surface_list->retireFenceFd);
+		HWCNativeBufferSetFence(b, hwco->layer_list->hwLayers[1 - 1].releaseFenceFd);
+	} else {
+		HWC_LOG("egl only\n");
+
+		hwc11_update_layer(hwco->egl_surface_list->hwLayers, HWCNativeBufferGetFence(b), b->handle);
+		hwco->egl_surface_list->retireFenceFd = -1;
+
+		assert(device->prepare(device, 1, &hwco->egl_surface_list) == 0);
+		assert(device->set(device, 1, &hwco->egl_surface_list) == 0);
+
+		HWCNativeBufferSetFence(b, hwco->egl_surface_list->hwLayers[0].releaseFenceFd);
+	}
+	hwco->last_egl_buffer = b;
 }
 
 static struct hwc_output *
@@ -731,6 +788,7 @@ hwc11_create_hwc_output(struct hwcomposer_output *o)
 {
 	struct hwc11 *hwc = (struct hwc11 *)o->compositor->hwc;
 	hwc_composer_device_1_t *device = hwc->composer_device;
+	struct weston_compositor *c = &o->compositor->base;
 	struct hwc11_output *hwco;
 	hwc_display_contents_1_t *list;
 	struct ANativeWindow *w;
@@ -744,7 +802,7 @@ hwc11_create_hwc_output(struct hwcomposer_output *o)
 	list->flags = HWC_GEOMETRY_CHANGED;
 	list->numHwLayers = 1;
 
-	hwc11_populate_layer(&list->hwLayers[0], o->base.width,
+	hwc11_populate_layer(&list->hwLayers[0], 0, 0, o->base.width,
 	                     o->base.height, 0, HWC_FRAMEBUFFER_TARGET);
 
 	w = createHWComposerNativeWindow(o->base.width, o->base.height,
@@ -754,6 +812,11 @@ hwc11_create_hwc_output(struct hwcomposer_output *o)
 	hwco = zalloc(sizeof *hwco);
 	hwco->base.native_window = (EGLNativeWindowType)w;
 	hwco->egl_surface_list = list;
+	weston_plane_init(&hwco->plane, c, 0, 0);
+	weston_compositor_stack_plane(c, &hwco->plane, NULL);
+	wl_list_init(&hwco->layer_buffer_list);
+	wl_list_init(&hwco->new_layer_buffer_list);
+
 	return &hwco->base;
 }
 
@@ -764,11 +827,266 @@ hwc11_refresh_rate(struct hwcomposer_compositor *c)
 }
 
 static void
-hwc11_output_frame(struct hwcomposer_output *o)
+hwc11_output_repaint(struct hwcomposer_output *o, pixman_region32_t *damage)
+{
+	struct weston_compositor *c = &o->compositor->base;
+	struct hwc11 *hwc = (struct hwc11 *)o->compositor->hwc;
+	struct hwc11_output *hwco = (struct hwc11_output *)o->hwco;
+	hwc_composer_device_1_t *device = hwc->composer_device;
+	hwco->repainted = true;
+
+	HWC_LOG("repaint %d\n",pixman_region32_not_empty(damage));
+
+	/* We render with EGL only if we have something to render, that is
+	 * if damage is not empty. Otherwise we use the old EGL buffer */
+	if ((hwco->use_egl || !hwco->layer_list) &&
+	    pixman_region32_not_empty(damage)) {
+		c->renderer->repaint_output(&o->base, damage);
+	} else {
+		HWC_LOG("layers only\n");
+		assert(device->set(device, 1, &hwco->layer_list) == 0);
+	}
+}
+
+static void
+hwc11_build_layer_list(struct hwcomposer_output *o)
+{
+	struct hwc11 *hwc = (struct hwc11 *)o->compositor->hwc;
+	struct hwc11_output *hwco = (struct hwc11_output *)o->hwco;
+	struct hwcomposer_compositor *c = o->compositor;
+	int dc_size, i = 0;
+	hwc_display_contents_1_t *dc;
+
+	if (wl_list_empty(&hwco->new_layer_buffer_list)) {
+		return;
+	}
+
+	int views_count = wl_list_length(&c->base.view_list);
+	views_count += 2;
+	dc_size = sizeof(hwc_display_contents_1_t) +
+	                 views_count * sizeof(hwc_layer_1_t);
+	dc = zalloc(dc_size);
+
+	dc->retireFenceFd = -1;
+	dc->outbuf = 0;
+	dc->outbufAcquireFenceFd = -1;
+	dc->flags = HWC_GEOMETRY_CHANGED;
+
+	if (hwco->use_egl) {
+		hwc11_populate_layer(&dc->hwLayers[i], 0, 0, o->base.width,
+				     o->base.height,
+				     hwco->last_egl_buffer->handle,
+				     HWC_FRAMEBUFFER);
+		++i;
+	}
+	struct hwc11_buffer_state *buf_state;
+	wl_list_for_each(buf_state, &hwco->new_layer_buffer_list, link) {
+		HWC_LOG("put view in layer list %p %s\n", buf_state->view,
+			buf_state->view->surface->role_name);
+		void *handle = NULL;
+		eglHybrisNativeBufferHandle(EGL_NO_DISPLAY,
+					    buf_state->egl_buffer, &handle);
+		buf_state->layer = i;
+		hwc11_populate_layer(&dc->hwLayers[i],
+				     buf_state->view->geometry.x,
+				     buf_state->view->geometry.y,
+				     buf_state->view->surface->width,
+				     buf_state->view->surface->height,
+				     (buffer_handle_t)handle, HWC_FRAMEBUFFER);
+		++i;
+	}
+
+	// Add the dummy fallback HWC_FRAMEBUFFER_TARGET layer. This one has
+        // buffer handle 0 as we intend to never render to it and that means
+        // 'set' is supposed to ignore it.
+        hwc11_populate_layer(&dc->hwLayers[i],
+			     0, 0, o->base.width, o->base.height,
+			     0, HWC_FRAMEBUFFER_TARGET);
+	dc->numHwLayers = i + 1;
+
+	if (hwc->composer_device->prepare(hwc->composer_device, 1, &dc) != 0) {
+		HWC_LOG("prepare failed\n");
+		assert(0);
+		return;
+	}
+
+	HWC_LOG("prepare worked\n");
+	hwco->layer_list = dc;
+
+	struct hwc11_buffer_state *buf_new;
+	wl_list_for_each(buf_new, &hwco->new_layer_buffer_list, link) {
+		// If we're posting the same buffer again, we need to close its
+		// release fd and mark it as -1 so we don't send release event back
+		// to app after composition...
+		struct hwc11_buffer_state *buf_old;
+		wl_list_for_each(buf_old, &hwco->layer_buffer_list, link) {
+			if (buf_new->egl_buffer == buf_old->egl_buffer) {
+				int fd = buf_old->release_fence_fd;
+				if (fd != -1) {
+					HWC_LOG(" - posting buffer=%p again, closing fd=%d\n",
+						buf_old->egl_buffer, fd);
+					close(fd);
+					buf_old->release_fence_fd = -1;
+				}
+				weston_buffer_reference(&buf_old->buffer, NULL);
+			}
+		}
+	}
+}
+
+static void
+hwc11_release_fences(struct hwc11_output *hwco)
+{
+	struct hwc11_buffer_state *buf_state, *next;
+
+	wl_list_for_each_safe(buf_state, next, &hwco->layer_buffer_list, link) {
+		int fd = buf_state->release_fence_fd;
+		HWC_LOG("release %p %d -> 0\n",buf_state->egl_buffer,fd);
+		if (fd != -1) {
+			sync_wait(fd, -1);
+			close(fd);
+		}
+		eglHybrisReleaseNativeBuffer(buf_state->egl_buffer);
+		weston_buffer_reference(&buf_state->buffer, NULL);
+		free(buf_state);
+	}
+	wl_list_init(&hwco->layer_buffer_list);
+}
+
+static void
+hwc11_release_old_layers(struct hwc11_output *hwco)
+{
+	hwc11_release_fences(hwco);
+	if (hwco->layer_list->retireFenceFd != -1)
+		close(hwco->layer_list->retireFenceFd);
+
+	wl_list_insert_list(&hwco->layer_buffer_list,
+				&hwco->new_layer_buffer_list);
+	wl_list_init(&hwco->new_layer_buffer_list);
+
+	struct hwc11_buffer_state *buf_state;
+	wl_list_for_each(buf_state, &hwco->layer_buffer_list, link) {
+		hwc_layer_1_t *l =
+			&hwco->layer_list->hwLayers[buf_state->layer];
+		buf_state->release_fence_fd = l->releaseFenceFd;
+
+		if (l->releaseFenceFd == -1) {
+			HWC_LOG("after compo %p %d  %p -> 0\n",
+				buf_state,
+				l->releaseFenceFd,
+				buf_state->buffer.buffer);
+			weston_buffer_reference(&buf_state->buffer,
+						NULL);
+		}
+	}
+}
+
+static EGLClientBuffer *
+hwc11_aquire_native_buffer(struct weston_view *view)
+{
+	struct weston_surface *surface = view->surface;
+	EGLClientBuffer egl_buffer = NULL;
+
+	if (view->alpha < 0.99) {
+		HWC_LOG(" - alpha < 1\n");
+		return NULL;
+	}
+	if (!surface->buffer_ref.buffer) {
+		HWC_LOG(" - no buf\n");
+		return NULL;
+	}
+	if (!surface->buffer_ref.buffer->resource) {
+		HWC_LOG(" - no res\n");
+		return NULL;
+	}
+	if (wl_shm_buffer_get(surface->buffer_ref.buffer->resource)) {
+		HWC_LOG(" - shm\n");
+		return NULL;
+	}
+
+	if (!eglHybrisAcquireNativeBufferWL(EGL_NO_DISPLAY,
+	                                    surface->buffer_ref.buffer->resource,
+	                                    &egl_buffer))
+		HWC_LOG(" - failed to acquire native buffer"
+			"(buffers are probably not allocated server-side)\n");
+	return egl_buffer;
+}
+
+static void
+hwc11_assign_planes(struct hwcomposer_output *o)
 {
 	struct hwc11_output *hwco = (struct hwc11_output *)o->hwco;
-	hwco->repainted = true;
-	//nothing to do here, we rely on the present and vsync callbacks
+	struct hwcomposer_compositor *c = o->compositor;
+	struct weston_view *ev, *next;
+	pixman_region32_t overlap, surface_overlap;
+	struct weston_plane *primary, *next_plane;
+	int i;
+
+	HWC_LOG("assign planes for output %p, %d views\n", o,
+		wl_list_length(&c->base.view_list));
+
+	if (hwco->layer_list)
+		hwc11_release_old_layers(hwco);
+
+	hwco->use_egl = false;
+	hwco->layer_list = NULL;
+
+	pixman_region32_init(&overlap);
+	primary = &c->base.primary_plane;
+
+	i = 1;
+	wl_list_for_each_safe(ev, next, &c->base.view_list, link) {
+		struct weston_surface *s = ev->surface;
+		HWC_LOG("view %p %dx%d\n",ev,s->width,s->height);
+		s->keep_buffer = true;
+
+		next_plane = NULL;
+
+		pixman_region32_init(&surface_overlap);
+		pixman_region32_intersect(&surface_overlap, &overlap,
+					  &ev->transform.boundingbox);
+
+		EGLClientBuffer egl_buffer = NULL;
+		if (!pixman_region32_not_empty(&surface_overlap))
+			egl_buffer = hwc11_aquire_native_buffer(ev);
+		if (egl_buffer) {
+			HWC_LOG(" - trying hw composition -> %p\n",
+				s->buffer_ref.buffer);
+
+			s->keep_buffer = true;
+
+			struct hwc11_buffer_state *buf_state;
+			buf_state = zalloc(sizeof *buf_state);
+			buf_state->layer = i;
+			buf_state->egl_buffer = egl_buffer;
+			buf_state->view = ev;
+			weston_buffer_reference(&buf_state->buffer,
+						s->buffer_ref.buffer);
+			buf_state->release_fence_fd = -1;
+
+			wl_list_insert(&hwco->new_layer_buffer_list,
+				       &buf_state->link);
+
+			next_plane = &hwco->plane;
+			++i;
+		}
+
+		if (next_plane == NULL) {
+			next_plane = primary;
+			hwco->use_egl = true;
+			pixman_region32_union(&overlap, &overlap,
+					      &ev->transform.boundingbox);
+		}
+
+		weston_view_move_to_plane(ev, next_plane);
+		ev->psf_flags = 0;
+
+		pixman_region32_fini(&surface_overlap);
+	}
+	pixman_region32_fini(&overlap);
+
+	hwco->layer_list = NULL;
+	hwc11_build_layer_list(o);
 }
 
 static void
@@ -793,14 +1111,18 @@ hwc11_output_set_dpms(struct hwcomposer_output *out, enum dpms_enum dpms)
 }
 
 static void
-hwc11_callback_vsync(const struct hwc_procs *procs, int display, int64_t timestamp)
+hwc11_callback_vsync(const struct hwc_procs *procs, int display,
+		     int64_t timestamp)
 {
 	struct hwc11 *hwc = container_of(procs, struct hwc11, procs);
 	struct weston_output *out;
+	struct hwcomposer_output *hwo;
+	struct hwc11_output *hwco;
 
+	HWC_LOG("--- vsync ---\n");
 	wl_list_for_each(out, &hwc->base.compositor->base.output_list, link) {
-		struct hwcomposer_output *hwo = (struct hwcomposer_output *)out;
-		struct hwc11_output *hwco = (struct hwc11_output *)hwo->hwco;
+		hwo = (struct hwcomposer_output *)out;
+		hwco = (struct hwc11_output *)hwo->hwco;
 		if (hwo->index != display)
 			continue;
 
@@ -836,14 +1158,15 @@ create_hwc11(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *
 {
 	struct hwc11 *hwc;
 
-	hwc = malloc(sizeof *hwc);
+	hwc = zalloc(sizeof *hwc);
 	hwc->base.compositor = c;
 	hwc->base.hwc_module = module;
 	hwc->base.hwc_device = device;
 	hwc->base.create_hwc_output = hwc11_create_hwc_output;
 	hwc->base.refresh_rate = hwc11_refresh_rate;
-	hwc->base.output_frame = hwc11_output_frame;
 	hwc->base.set_dpms = hwc11_output_set_dpms;
+	hwc->base.output_repaint = hwc11_output_repaint;
+	hwc->base.assign_planes = hwc11_assign_planes;
 
 	hwc->composer_device = (hwc_composer_device_1_t *)device;
 	hwc->procs.vsync = hwc11_callback_vsync;
@@ -852,6 +1175,32 @@ create_hwc11(struct hwcomposer_compositor *c, hw_module_t *module, hw_device_t *
 	hwc->composer_device->registerProcs(hwc->composer_device, &hwc->procs);
 
 	c->hwc = &hwc->base;
+
+	const char *acquireNativeBufferExtension = "EGL_HYBRIS_WL_acquire_native_buffer";
+	const char *nativeBuffer2Extensions = "EGL_HYBRIS_native_buffer2";
+	const char *extensions = eglQueryString(eglGetCurrentDisplay(), EGL_EXTENSIONS);
+	int checked = 0;
+
+	if (strstr(extensions, acquireNativeBufferExtension) != 0) {
+		eglHybrisAcquireNativeBufferWL = (Ptr_eglHybrisAcquireNativeBufferWL) eglGetProcAddress("eglHybrisAcquireNativeBufferWL");
+		checked |= 0x1;
+	} else {
+		weston_log("Missing required EGL extension: '%s'\n", acquireNativeBufferExtension);
+	}
+	if (strstr(extensions, nativeBuffer2Extensions) != 0) {
+		eglHybrisNativeBufferHandle = (Ptr_eglHybrisNativeBufferHandle) eglGetProcAddress("eglHybrisNativeBufferHandle");
+		eglHybrisReleaseNativeBuffer = (Ptr_eglHybrisReleaseNativeBuffer) eglGetProcAddress("eglHybrisReleaseNativeBuffer");
+		checked |= 0x2;
+	} else {
+		weston_log("Missing required EGL extension: '%s'\n", nativeBuffer2Extensions);
+	}
+
+	// If both extensions were found
+	if (checked == (0x1 | 0x2)) {
+		weston_log("HWC composition of window surfaces is enabled\n");
+	} else {
+		weston_log("HWC composition of window surfaces is disabled\n");
+	}
 }
 #endif
 
