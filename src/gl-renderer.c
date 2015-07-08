@@ -971,6 +971,9 @@ gl_renderer_repaint_output(struct weston_output *output,
 		   output->current_mode->width,
 		   output->current_mode->height);
 
+	if (!gr->has_egl_buffer_age)
+		glClear(GL_COLOR_BUFFER_BIT);
+
 	/* Calculate the global GL matrix */
 	go->output_matrix = output->matrix;
 	weston_matrix_translate(&go->output_matrix,
@@ -2593,6 +2596,7 @@ gl_renderer_setup(struct weston_compositor *ec, EGLSurface egl_surface)
 	if (strstr(extensions, "GL_OES_EGL_image_external"))
 		gr->has_egl_image_external = 1;
 
+	glClearColor(0., 0., 0., 0.);
 	glActiveTexture(GL_TEXTURE0);
 
 	if (compile_shaders(ec))
