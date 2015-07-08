@@ -171,6 +171,7 @@ struct hwc11_buffer_state {
 	EGLClientBuffer egl_buffer;
 	struct weston_buffer_reference buffer;
 	int release_fence_fd;
+	bool accepted;
 };
 
 #endif
@@ -760,7 +761,8 @@ hwc11_window_present(void *data, struct ANativeWindow *w, struct ANativeWindowBu
 	hwc_composer_device_1_t *device = hwc->composer_device;
 
 	if (hwco->layer_list) {
-		hwc11_update_layer(&hwco->layer_list->hwLayers[0],
+		int n = hwco->layer_list->numHwLayers - 2;
+		hwc11_update_layer(&hwco->layer_list->hwLayers[n],
 				   HWCNativeBufferGetFence(b), b->handle);
 
 		HWC_LOG("layers + egl\n");
@@ -768,7 +770,7 @@ hwc11_window_present(void *data, struct ANativeWindow *w, struct ANativeWindowBu
 		assert(device->prepare(device, 1, &hwco->layer_list) == 0);
 		assert(device->set(device, 1, &hwco->layer_list) == 0);
 
-		HWCNativeBufferSetFence(b, hwco->layer_list->hwLayers[1 - 1].releaseFenceFd);
+		HWCNativeBufferSetFence(b, hwco->layer_list->hwLayers[n].releaseFenceFd);
 	} else {
 		HWC_LOG("egl only\n");
 
@@ -813,7 +815,7 @@ hwc11_create_hwc_output(struct hwcomposer_output *o)
 	hwco->base.native_window = (EGLNativeWindowType)w;
 	hwco->egl_surface_list = list;
 	weston_plane_init(&hwco->plane, c, 0, 0);
-	weston_compositor_stack_plane(c, &hwco->plane, NULL);
+	weston_compositor_stack_plane(c, &hwco->plane, &c->primary_plane);
 	wl_list_init(&hwco->layer_buffer_list);
 	wl_list_init(&hwco->new_layer_buffer_list);
 
@@ -845,6 +847,11 @@ hwc11_output_repaint(struct hwcomposer_output *o, pixman_region32_t *damage)
 	} else {
 		HWC_LOG("layers only\n");
 		assert(device->set(device, 1, &hwco->layer_list) == 0);
+		if (hwco->use_egl) {
+			int n = hwco->layer_list->numHwLayers - 2;
+			HWCNativeBufferSetFence(hwco->last_egl_buffer,
+						hwco->layer_list->hwLayers[n].releaseFenceFd);
+		}
 	}
 }
 
@@ -854,7 +861,8 @@ hwc11_build_layer_list(struct hwcomposer_output *o)
 	struct hwc11 *hwc = (struct hwc11 *)o->compositor->hwc;
 	struct hwc11_output *hwco = (struct hwc11_output *)o->hwco;
 	struct hwcomposer_compositor *c = o->compositor;
-	int dc_size, i = 0;
+	uint32_t dc_size, i = 0;
+	bool accept = false;
 	hwc_display_contents_1_t *dc;
 
 	if (wl_list_empty(&hwco->new_layer_buffer_list)) {
@@ -872,42 +880,73 @@ hwc11_build_layer_list(struct hwcomposer_output *o)
 	dc->outbufAcquireFenceFd = -1;
 	dc->flags = HWC_GEOMETRY_CHANGED;
 
-	if (hwco->use_egl) {
-		hwc11_populate_layer(&dc->hwLayers[i], 0, 0, o->base.width,
-				     o->base.height,
-				     hwco->last_egl_buffer->handle,
-				     HWC_FRAMEBUFFER);
-		++i;
-	}
-	struct hwc11_buffer_state *buf_state;
-	wl_list_for_each(buf_state, &hwco->new_layer_buffer_list, link) {
-		HWC_LOG("put view in layer list %p %s\n", buf_state->view,
-			buf_state->view->surface->role_name);
-		void *handle = NULL;
-		eglHybrisNativeBufferHandle(EGL_NO_DISPLAY,
-					    buf_state->egl_buffer, &handle);
-		buf_state->layer = i;
+	while (!accept && !wl_list_empty(&hwco->new_layer_buffer_list)) {
+		struct hwc11_buffer_state *buf_state;
+		i = 0;
+		wl_list_for_each_reverse(buf_state, &hwco->new_layer_buffer_list, link) {
+			if (!buf_state->accepted)
+				continue;
+
+			HWC_LOG("put view in layer list %p %s\n", buf_state->view,
+				buf_state->view->surface->role_name);
+			void *handle = NULL;
+			eglHybrisNativeBufferHandle(EGL_NO_DISPLAY,
+						buf_state->egl_buffer, &handle);
+			buf_state->layer = i;
+			hwc11_populate_layer(&dc->hwLayers[i],
+					buf_state->view->geometry.x,
+					buf_state->view->geometry.y,
+					buf_state->view->surface->width,
+					buf_state->view->surface->height,
+					(buffer_handle_t)handle, HWC_FRAMEBUFFER);
+			++i;
+		}
+		if (hwco->use_egl) {
+			HWC_LOG("put egl surface in layer list\n");
+			hwc11_populate_layer(&dc->hwLayers[i], 0, 0, o->base.width,
+					o->base.height,
+					hwco->last_egl_buffer->handle,
+					HWC_FRAMEBUFFER);
+			++i;
+		}
+
+		// Add the dummy fallback HWC_FRAMEBUFFER_TARGET layer. This one has
+		// buffer handle 0 as we intend to never render to it and that means
+		// 'set' is supposed to ignore it.
 		hwc11_populate_layer(&dc->hwLayers[i],
-				     buf_state->view->geometry.x,
-				     buf_state->view->geometry.y,
-				     buf_state->view->surface->width,
-				     buf_state->view->surface->height,
-				     (buffer_handle_t)handle, HWC_FRAMEBUFFER);
-		++i;
-	}
+				0, 0, o->base.width, o->base.height,
+				0, HWC_FRAMEBUFFER_TARGET);
+		dc->numHwLayers = i + 1;
 
-	// Add the dummy fallback HWC_FRAMEBUFFER_TARGET layer. This one has
-        // buffer handle 0 as we intend to never render to it and that means
-        // 'set' is supposed to ignore it.
-        hwc11_populate_layer(&dc->hwLayers[i],
-			     0, 0, o->base.width, o->base.height,
-			     0, HWC_FRAMEBUFFER_TARGET);
-	dc->numHwLayers = i + 1;
+		if (hwc->composer_device->prepare(hwc->composer_device, 1, &dc) != 0) {
+			HWC_LOG("prepare failed\n");
+			assert(0);
+			return;
+		}
 
-	if (hwc->composer_device->prepare(hwc->composer_device, 1, &dc) != 0) {
-		HWC_LOG("prepare failed\n");
-		assert(0);
-		return;
+		accept = true;
+		for (i = 0; i < dc->numHwLayers - 1; ++i) {
+			if (dc->hwLayers[i].compositionType != HWC_OVERLAY) {
+				HWC_LOG("\t - layer %d failed\n", i);
+				accept = false;
+				break;
+			}
+		}
+		if (!accept) {
+			/* Not ok, remove one layer and try again. However, this does
+			 * mean that we need to do egl rendering in addition to our
+			 * own rendering, so we enable that flag regardless of its own
+			 * state. This adds another layer, but we also reduce the
+			 * total count by one so we're still good with the memory we
+			 * allocated for 'dc'. */
+			hwco->use_egl = true;
+			wl_list_for_each(buf_state, &hwco->new_layer_buffer_list, link) {
+				if (buf_state->accepted) {
+					buf_state->accepted = false;
+					break;
+				}
+			}
+		}
 	}
 
 	HWC_LOG("prepare worked\n");
@@ -956,6 +995,8 @@ hwc11_release_fences(struct hwc11_output *hwco)
 static void
 hwc11_release_old_layers(struct hwc11_output *hwco)
 {
+	hwc_layer_1_t *layer;
+
 	hwc11_release_fences(hwco);
 	if (hwco->layer_list->retireFenceFd != -1)
 		close(hwco->layer_list->retireFenceFd);
@@ -966,14 +1007,16 @@ hwc11_release_old_layers(struct hwc11_output *hwco)
 
 	struct hwc11_buffer_state *buf_state;
 	wl_list_for_each(buf_state, &hwco->layer_buffer_list, link) {
-		hwc_layer_1_t *l =
-			&hwco->layer_list->hwLayers[buf_state->layer];
-		buf_state->release_fence_fd = l->releaseFenceFd;
+		if (!buf_state->accepted)
+			continue;
 
-		if (l->releaseFenceFd == -1) {
+		layer = &hwco->layer_list->hwLayers[buf_state->layer];
+		buf_state->release_fence_fd = layer->releaseFenceFd;
+
+		if (layer->releaseFenceFd == -1) {
 			HWC_LOG("after compo %p %d  %p -> 0\n",
 				buf_state,
-				l->releaseFenceFd,
+				layer->releaseFenceFd,
 				buf_state->buffer.buffer);
 			weston_buffer_reference(&buf_state->buffer,
 						NULL);
@@ -1018,9 +1061,8 @@ hwc11_assign_planes(struct hwcomposer_output *o)
 	struct hwc11_output *hwco = (struct hwc11_output *)o->hwco;
 	struct hwcomposer_compositor *c = o->compositor;
 	struct weston_view *ev, *next;
-	pixman_region32_t overlap, surface_overlap;
 	struct weston_plane *primary, *next_plane;
-	int i;
+	struct hwc11_buffer_state *buf_state;
 
 	HWC_LOG("assign planes for output %p, %d views\n", o,
 		wl_list_length(&c->base.view_list));
@@ -1030,24 +1072,26 @@ hwc11_assign_planes(struct hwcomposer_output *o)
 
 	hwco->use_egl = false;
 	hwco->layer_list = NULL;
-
-	pixman_region32_init(&overlap);
 	primary = &c->base.primary_plane;
 
-	i = 1;
-	wl_list_for_each_safe(ev, next, &c->base.view_list, link) {
+	wl_list_for_each_reverse_safe(ev, next, &c->base.view_list, link) {
 		struct weston_surface *s = ev->surface;
-		HWC_LOG("view %p %dx%d\n",ev,s->width,s->height);
+
+		HWC_LOG("view %p %dx%d alpha: %f\n",ev,s->width,s->height,ev->alpha);
 		s->keep_buffer = true;
 
-		next_plane = NULL;
-
-		pixman_region32_init(&surface_overlap);
-		pixman_region32_intersect(&surface_overlap, &overlap,
-					  &ev->transform.boundingbox);
+		/** Skip invisible views so we don't use the precious layer
+		 * slots for views that cannot be seen. */
+		if (ev->alpha < 0.01)
+			continue;
 
 		EGLClientBuffer egl_buffer = NULL;
-		if (!pixman_region32_not_empty(&surface_overlap))
+		/** TODO ###
+		 * Currently we always put the egl surface on top of the layer list so
+		 * if some lower view used egl don't try to use a layer on top of it.
+		 * However, we probably could sandwich the egl surface between two hwc
+		 * layers, to be implemented. */
+		if (!hwco->use_egl)
 			egl_buffer = hwc11_aquire_native_buffer(ev);
 		if (egl_buffer) {
 			HWC_LOG(" - trying hw composition -> %p\n",
@@ -1055,38 +1099,35 @@ hwc11_assign_planes(struct hwcomposer_output *o)
 
 			s->keep_buffer = true;
 
-			struct hwc11_buffer_state *buf_state;
 			buf_state = zalloc(sizeof *buf_state);
-			buf_state->layer = i;
 			buf_state->egl_buffer = egl_buffer;
 			buf_state->view = ev;
+			buf_state->release_fence_fd = -1;
+			buf_state->accepted = true;
 			weston_buffer_reference(&buf_state->buffer,
 						s->buffer_ref.buffer);
-			buf_state->release_fence_fd = -1;
-
 			wl_list_insert(&hwco->new_layer_buffer_list,
 				       &buf_state->link);
-
-			next_plane = &hwco->plane;
-			++i;
-		}
-
-		if (next_plane == NULL) {
-			next_plane = primary;
+		} else {
 			hwco->use_egl = true;
-			pixman_region32_union(&overlap, &overlap,
-					      &ev->transform.boundingbox);
+			weston_view_move_to_plane(ev, primary);
 		}
 
-		weston_view_move_to_plane(ev, next_plane);
 		ev->psf_flags = 0;
-
-		pixman_region32_fini(&surface_overlap);
 	}
-	pixman_region32_fini(&overlap);
 
 	hwco->layer_list = NULL;
 	hwc11_build_layer_list(o);
+
+	wl_list_for_each(buf_state, &hwco->new_layer_buffer_list, link) {
+		next_plane = primary;
+		if (buf_state->accepted) {
+			next_plane = &hwco->plane;
+		} else {
+			weston_buffer_reference(&buf_state->buffer, NULL);
+		}
+		weston_view_move_to_plane(buf_state->view, next_plane);
+	}
 }
 
 static void
