@@ -1,5 +1,8 @@
 /*
- * Copyright © 2015 Collabora, Ltd.
+ * Copyright © 2008-2011 Kristian Høgsberg
+ * Copyright © 2010-2011 Intel Corporation
+ * Copyright © 2013 Vasily Khoruzhick <anarsoul@gmail.com>
+ * Copyright © 2015 Giulio Camuffo
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,19 +26,30 @@
  * SOFTWARE.
  */
 
-#ifndef IVI_TEST_H
-#define IVI_TEST_H
+#ifndef WESTON_COMPOSITOR_X11
+#define WESTON_COMPOSITOR_X11
 
-/*
- * IVI_TEST_SURFACE_ID_BASE is an arbitrary number picked for the
- * IVI tests. The only requirement is that it does not clash with
- * any other ivi-id range used in Weston.
- */
-#define IVI_TEST_SURFACE_ID_BASE 0xffc01200
-#define IVI_TEST_SURFACE_ID(i) (IVI_TEST_SURFACE_ID_BASE + i)
-#define IVI_TEST_LAYER_ID_BASE 0xeef01200
-#define IVI_TEST_LAYER_ID(i) (IVI_TEST_LAYER_ID_BASE + i)
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
-#define IVI_TEST_SURFACE_COUNT (3)
+#include "compositor.h"
 
-#endif /* IVI_TEST_H */
+struct weston_x11_backend_config {
+	struct weston_backend_config base;
+
+	bool use_pixman;
+	bool no_input;
+};
+
+struct weston_x11_backend_output_config {
+	struct weston_backend_output_config base;
+
+	int fullscreen;
+};
+
+#ifdef  __cplusplus
+}
+#endif
+
+#endif

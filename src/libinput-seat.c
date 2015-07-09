@@ -60,6 +60,7 @@ device_added(struct udev_input *input, struct libinput_device *libinput_device)
 	struct libinput_seat *libinput_seat;
 	struct weston_seat *seat;
 	struct udev_seat *udev_seat;
+	struct weston_libinput_device_config config;
 
 	c = input->compositor;
 	libinput_seat = libinput_device_get_seat(libinput_device);
@@ -74,6 +75,15 @@ device_added(struct udev_input *input, struct libinput_device *libinput_device)
 	if (device == NULL)
 		return;
 
+	if (input->configure_device != NULL) {
+		config.enable_tap =
+			libinput_device_config_tap_get_finger_count(device->device) &&
+			libinput_device_config_tap_get_default_enabled(device->device);
+		input->configure_device(c, &config);
+		libinput_device_config_tap_set_enabled(device->device,
+						       config.enable_tap);
+	}
+	evdev_device_set_calibration(device);
 	udev_seat = (struct udev_seat *) seat;
 	wl_list_insert(udev_seat->devices_list.prev, &device->link);
 

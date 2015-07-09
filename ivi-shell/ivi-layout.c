@@ -111,6 +111,9 @@ struct ivi_layout_notification_callback {
 	void *data;
 };
 
+static void
+remove_notification(struct wl_list *listener_list, void *callback, void *userdata);
+
 static struct ivi_layout ivilayout = {0};
 
 struct ivi_layout *
@@ -319,29 +322,41 @@ ivi_layout_surface_remove_notification(struct ivi_layout_surface *ivisurf)
 	remove_all_notification(&ivisurf->property_changed.listener_list);
 }
 
-/**
- * this shall not be called from controller because this is triggered by ivi_surface.destroy
- * This means that this is called from westonsurface_destroy_from_ivisurface.
- */
 static void
-ivi_layout_surface_remove(struct ivi_layout_surface *ivisurf)
+ivi_layout_surface_remove_notification_by_callback(struct ivi_layout_surface *ivisurf,
+						   surface_property_notification_func callback,
+						   void *userdata)
+{
+	if (ivisurf == NULL) {
+		weston_log("ivi_layout_surface_remove_notification_by_callback: invalid argument\n");
+		return;
+	}
+
+	remove_notification(&ivisurf->property_changed.listener_list, callback, userdata);
+}
+
+/**
+ * Called at destruction of wl_surface/ivi_surface
+ */
+void
+ivi_layout_surface_destroy(struct ivi_layout_surface *ivisurf)
 {
 	struct ivi_layout *layout = get_instance();
 
 	if (ivisurf == NULL) {
-		weston_log("ivi_layout_surface_remove: invalid argument\n");
+		weston_log("%s: invalid argument\n", __func__);
 		return;
 	}
 
-	if (!wl_list_empty(&ivisurf->pending.link)) {
-		wl_list_remove(&ivisurf->pending.link);
-	}
-	if (!wl_list_empty(&ivisurf->order.link)) {
-		wl_list_remove(&ivisurf->order.link);
-	}
-	if (!wl_list_empty(&ivisurf->link)) {
-		wl_list_remove(&ivisurf->link);
-	}
+	wl_list_remove(&ivisurf->surface_rotation.link);
+	wl_list_remove(&ivisurf->layer_rotation.link);
+	wl_list_remove(&ivisurf->surface_pos.link);
+	wl_list_remove(&ivisurf->layer_pos.link);
+	wl_list_remove(&ivisurf->scaling.link);
+
+	wl_list_remove(&ivisurf->pending.link);
+	wl_list_remove(&ivisurf->order.link);
+	wl_list_remove(&ivisurf->link);
 	remove_ordersurface_from_layer(ivisurf);
 
 	wl_signal_emit(&layout->surface_notification.removed, ivisurf);
@@ -350,28 +365,9 @@ ivi_layout_surface_remove(struct ivi_layout_surface *ivisurf)
 
 	ivi_layout_surface_remove_notification(ivisurf);
 
-	free(ivisurf);
-}
-
-/**
- * Called at destruction of ivi_surface
- */
-static void
-westonsurface_destroy_from_ivisurface(struct wl_listener *listener, void *data)
-{
-	struct ivi_layout_surface *ivisurf = NULL;
-
-	ivisurf = container_of(listener, struct ivi_layout_surface,
-			       surface_destroy_listener);
-
-	wl_list_remove(&ivisurf->surface_rotation.link);
-	wl_list_remove(&ivisurf->layer_rotation.link);
-	wl_list_remove(&ivisurf->surface_pos.link);
-	wl_list_remove(&ivisurf->layer_pos.link);
-	wl_list_remove(&ivisurf->scaling.link);
-
 	ivisurf->surface = NULL;
-	ivi_layout_surface_remove(ivisurf);
+
+	free(ivisurf);
 }
 
 /**
@@ -1083,11 +1079,13 @@ send_prop(struct ivi_layout *layout)
 	struct ivi_layout_surface *ivisurf  = NULL;
 
 	wl_list_for_each_reverse(ivilayer, &layout->layer_list, link) {
-		send_layer_prop(ivilayer);
+		if (ivilayer->event_mask)
+			send_layer_prop(ivilayer);
 	}
 
 	wl_list_for_each_reverse(ivisurf, &layout->surface_list, link) {
-		send_surface_prop(ivisurf);
+		if (ivisurf->event_mask)
+			send_surface_prop(ivisurf);
 	}
 }
 
@@ -1484,6 +1482,12 @@ ivi_layout_get_id_of_layer(struct ivi_layout_layer *ivilayer)
 	return ivilayer->id_layer;
 }
 
+static uint32_t
+ivi_layout_get_id_of_screen(struct ivi_layout_screen *iviscrn)
+{
+	return iviscrn->id_screen;
+}
+
 static struct ivi_layout_layer *
 ivi_layout_get_layer_from_id(uint32_t id_layer)
 {
@@ -1535,7 +1539,7 @@ ivi_layout_get_screen_resolution(struct ivi_layout_screen *iviscrn,
 {
 	struct weston_output *output = NULL;
 
-	if (pWidth == NULL || pHeight == NULL) {
+	if (iviscrn == NULL || pWidth == NULL || pHeight == NULL) {
 		weston_log("ivi_layout_get_screen_resolution: invalid argument\n");
 		return IVI_FAILED;
 	}
@@ -1718,7 +1722,7 @@ ivi_layout_get_layers_on_screen(struct ivi_layout_screen *iviscrn,
 			return IVI_FAILED;
 		}
 
-		wl_list_for_each(ivilayer, &iviscrn->order.layer_list, link) {
+		wl_list_for_each(ivilayer, &iviscrn->order.layer_list, order.link) {
 			(*ppArray)[n++] = ivilayer;
 		}
 	}
@@ -1840,6 +1844,7 @@ ivi_layout_layer_create_with_dimension(uint32_t id_layer,
 	ivilayer = get_layer(&layout->layer_list, id_layer);
 	if (ivilayer != NULL) {
 		weston_log("id_layer is already created\n");
+		++ivilayer->ref_count;
 		return ivilayer;
 	}
 
@@ -1849,6 +1854,7 @@ ivi_layout_layer_create_with_dimension(uint32_t id_layer,
 		return NULL;
 	}
 
+	ivilayer->ref_count = 1;
 	wl_list_init(&ivilayer->link);
 	wl_signal_init(&ivilayer->property_changed);
 	wl_list_init(&ivilayer->screen_list);
@@ -1885,7 +1891,20 @@ ivi_layout_layer_remove_notification(struct ivi_layout_layer *ivilayer)
 }
 
 static void
-ivi_layout_layer_remove(struct ivi_layout_layer *ivilayer)
+ivi_layout_layer_remove_notification_by_callback(struct ivi_layout_layer *ivilayer,
+						 layer_property_notification_func callback,
+						 void *userdata)
+{
+	if (ivilayer == NULL) {
+		weston_log("ivi_layout_layer_remove_notification_by_callback: invalid argument\n");
+		return;
+	}
+
+	remove_notification(&ivilayer->property_changed.listener_list, callback, userdata);
+}
+
+static void
+ivi_layout_layer_destroy(struct ivi_layout_layer *ivilayer)
 {
 	struct ivi_layout *layout = get_instance();
 
@@ -1893,6 +1912,9 @@ ivi_layout_layer_remove(struct ivi_layout_layer *ivilayer)
 		weston_log("ivi_layout_layer_remove: invalid argument\n");
 		return;
 	}
+
+	if (--ivilayer->ref_count > 0)
+		return;
 
 	wl_signal_emit(&layout->layer_notification.removed, ivilayer);
 
@@ -1929,7 +1951,10 @@ ivi_layout_layer_set_visibility(struct ivi_layout_layer *ivilayer,
 	prop = &ivilayer->pending.prop;
 	prop->visibility = newVisibility;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_VISIBILITY;
+	if (ivilayer->prop.visibility != newVisibility)
+		ivilayer->event_mask |= IVI_NOTIFICATION_VISIBILITY;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_VISIBILITY;
 
 	return IVI_SUCCEEDED;
 }
@@ -1951,7 +1976,9 @@ ivi_layout_layer_set_opacity(struct ivi_layout_layer *ivilayer,
 {
 	struct ivi_layout_layer_properties *prop = NULL;
 
-	if (ivilayer == NULL) {
+	if (ivilayer == NULL ||
+	    opacity < wl_fixed_from_double(0.0) ||
+	    wl_fixed_from_double(1.0) < opacity) {
 		weston_log("ivi_layout_layer_set_opacity: invalid argument\n");
 		return IVI_FAILED;
 	}
@@ -1959,7 +1986,10 @@ ivi_layout_layer_set_opacity(struct ivi_layout_layer *ivilayer,
 	prop = &ivilayer->pending.prop;
 	prop->opacity = opacity;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_OPACITY;
+	if (ivilayer->prop.opacity != opacity)
+		ivilayer->event_mask |= IVI_NOTIFICATION_OPACITY;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_OPACITY;
 
 	return IVI_SUCCEEDED;
 }
@@ -1993,7 +2023,12 @@ ivi_layout_layer_set_source_rectangle(struct ivi_layout_layer *ivilayer,
 	prop->source_width = width;
 	prop->source_height = height;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_SOURCE_RECT;
+	if (ivilayer->prop.source_x != x || ivilayer->prop.source_y != y ||
+	    ivilayer->prop.source_width != width ||
+	    ivilayer->prop.source_height != height)
+		ivilayer->event_mask |= IVI_NOTIFICATION_SOURCE_RECT;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_SOURCE_RECT;
 
 	return IVI_SUCCEEDED;
 }
@@ -2016,7 +2051,12 @@ ivi_layout_layer_set_destination_rectangle(struct ivi_layout_layer *ivilayer,
 	prop->dest_width = width;
 	prop->dest_height = height;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_DEST_RECT;
+	if (ivilayer->prop.dest_x != x || ivilayer->prop.dest_y != y ||
+	    ivilayer->prop.dest_width != width ||
+	    ivilayer->prop.dest_height != height)
+		ivilayer->event_mask |= IVI_NOTIFICATION_DEST_RECT;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_DEST_RECT;
 
 	return IVI_SUCCEEDED;
 }
@@ -2052,7 +2092,11 @@ ivi_layout_layer_set_dimension(struct ivi_layout_layer *ivilayer,
 	prop->dest_width  = dest_width;
 	prop->dest_height = dest_height;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_DIMENSION;
+	if (ivilayer->prop.dest_width != dest_width ||
+	    ivilayer->prop.dest_height != dest_height)
+		ivilayer->event_mask |= IVI_NOTIFICATION_DIMENSION;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_DIMENSION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2087,7 +2131,10 @@ ivi_layout_layer_set_position(struct ivi_layout_layer *ivilayer,
 	prop->dest_x = dest_x;
 	prop->dest_y = dest_y;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_POSITION;
+	if (ivilayer->prop.dest_x != dest_x || ivilayer->prop.dest_y != dest_y)
+		ivilayer->event_mask |= IVI_NOTIFICATION_POSITION;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_POSITION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2106,7 +2153,10 @@ ivi_layout_layer_set_orientation(struct ivi_layout_layer *ivilayer,
 	prop = &ivilayer->pending.prop;
 	prop->orientation = orientation;
 
-	ivilayer->event_mask |= IVI_NOTIFICATION_ORIENTATION;
+	if (ivilayer->prop.orientation != orientation)
+		ivilayer->event_mask |= IVI_NOTIFICATION_ORIENTATION;
+	else
+		ivilayer->event_mask &= ~IVI_NOTIFICATION_ORIENTATION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2187,7 +2237,10 @@ ivi_layout_surface_set_visibility(struct ivi_layout_surface *ivisurf,
 	prop = &ivisurf->pending.prop;
 	prop->visibility = newVisibility;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_VISIBILITY;
+	if (ivisurf->prop.visibility != newVisibility)
+		ivisurf->event_mask |= IVI_NOTIFICATION_VISIBILITY;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_VISIBILITY;
 
 	return IVI_SUCCEEDED;
 }
@@ -2209,7 +2262,9 @@ ivi_layout_surface_set_opacity(struct ivi_layout_surface *ivisurf,
 {
 	struct ivi_layout_surface_properties *prop = NULL;
 
-	if (ivisurf == NULL) {
+	if (ivisurf == NULL ||
+	    opacity < wl_fixed_from_double(0.0) ||
+	    wl_fixed_from_double(1.0) < opacity) {
 		weston_log("ivi_layout_surface_set_opacity: invalid argument\n");
 		return IVI_FAILED;
 	}
@@ -2217,7 +2272,10 @@ ivi_layout_surface_set_opacity(struct ivi_layout_surface *ivisurf,
 	prop = &ivisurf->pending.prop;
 	prop->opacity = opacity;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_OPACITY;
+	if (ivisurf->prop.opacity != opacity)
+		ivisurf->event_mask |= IVI_NOTIFICATION_OPACITY;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_OPACITY;
 
 	return IVI_SUCCEEDED;
 }
@@ -2255,7 +2313,12 @@ ivi_layout_surface_set_destination_rectangle(struct ivi_layout_surface *ivisurf,
 	prop->dest_width = width;
 	prop->dest_height = height;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_DEST_RECT;
+	if (ivisurf->prop.dest_x != x || ivisurf->prop.dest_y != y ||
+	    ivisurf->prop.dest_width != width ||
+	    ivisurf->prop.dest_height != height)
+		ivisurf->event_mask |= IVI_NOTIFICATION_DEST_RECT;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_DEST_RECT;
 
 	return IVI_SUCCEEDED;
 }
@@ -2275,7 +2338,11 @@ ivi_layout_surface_set_dimension(struct ivi_layout_surface *ivisurf,
 	prop->dest_width  = dest_width;
 	prop->dest_height = dest_height;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_DIMENSION;
+	if (ivisurf->prop.dest_width != dest_width ||
+	    ivisurf->prop.dest_height != dest_height)
+		ivisurf->event_mask |= IVI_NOTIFICATION_DIMENSION;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_DIMENSION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2310,7 +2377,10 @@ ivi_layout_surface_set_position(struct ivi_layout_surface *ivisurf,
 	prop->dest_x = dest_x;
 	prop->dest_y = dest_y;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_POSITION;
+	if (ivisurf->prop.dest_x != dest_x || ivisurf->prop.dest_y != dest_y)
+		ivisurf->event_mask |= IVI_NOTIFICATION_POSITION;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_POSITION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2344,7 +2414,10 @@ ivi_layout_surface_set_orientation(struct ivi_layout_surface *ivisurf,
 	prop = &ivisurf->pending.prop;
 	prop->orientation = orientation;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_ORIENTATION;
+	if (ivisurf->prop.orientation != orientation)
+		ivisurf->event_mask |= IVI_NOTIFICATION_ORIENTATION;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_ORIENTATION;
 
 	return IVI_SUCCEEDED;
 }
@@ -2618,7 +2691,12 @@ ivi_layout_surface_set_source_rectangle(struct ivi_layout_surface *ivisurf,
 	prop->source_width = width;
 	prop->source_height = height;
 
-	ivisurf->event_mask |= IVI_NOTIFICATION_SOURCE_RECT;
+	if (ivisurf->prop.source_x != x || ivisurf->prop.source_y != y ||
+	    ivisurf->prop.source_width != width ||
+	    ivisurf->prop.source_height != height)
+		ivisurf->event_mask |= IVI_NOTIFICATION_SOURCE_RECT;
+	else
+		ivisurf->event_mask &= ~IVI_NOTIFICATION_SOURCE_RECT;
 
 	return IVI_SUCCEEDED;
 }
@@ -2808,10 +2886,6 @@ ivi_layout_surface_create(struct weston_surface *wl_surface,
 	ivisurf->layout = layout;
 
 	ivisurf->surface = wl_surface;
-	ivisurf->surface_destroy_listener.notify =
-		westonsurface_destroy_from_ivisurface;
-	wl_resource_add_destroy_listener(wl_surface->resource,
-					 &ivisurf->surface_destroy_listener);
 
 	tmpview = weston_view_create(wl_surface);
 	if (tmpview == NULL) {
@@ -2931,7 +3005,7 @@ static struct ivi_controller_interface ivi_controller_interface = {
 	.add_notification_remove_layer		= ivi_layout_add_notification_remove_layer,
 	.remove_notification_remove_layer	= ivi_layout_remove_notification_remove_layer,
 	.layer_create_with_dimension		= ivi_layout_layer_create_with_dimension,
-	.layer_remove				= ivi_layout_layer_remove,
+	.layer_destroy				= ivi_layout_layer_destroy,
 	.get_layers				= ivi_layout_get_layers,
 	.get_id_of_layer			= ivi_layout_get_id_of_layer,
 	.get_layer_from_id			= ivi_layout_get_layer_from_id,
@@ -2958,7 +3032,7 @@ static struct ivi_controller_interface ivi_controller_interface = {
 	.layer_set_transition			= ivi_layout_layer_set_transition,
 
 	/**
-	 * screen controller interfaces
+	 * screen controller interfaces part1
 	 */
 	.get_screen_from_id		= ivi_layout_get_screen_from_id,
 	.get_screen_resolution		= ivi_layout_get_screen_resolution,
@@ -2979,16 +3053,28 @@ static struct ivi_controller_interface ivi_controller_interface = {
 	 */
 	.surface_get_size		= ivi_layout_surface_get_size,
 	.surface_dump			= ivi_layout_surface_dump,
+
+	/**
+	 * remove notification by callback on property changes of ivi_surface/layer
+	 */
+	.surface_remove_notification_by_callback	= ivi_layout_surface_remove_notification_by_callback,
+	.layer_remove_notification_by_callback		= ivi_layout_layer_remove_notification_by_callback,
+
+	/**
+	 * screen controller interfaces part2
+	 */
+	.get_id_of_screen	= ivi_layout_get_id_of_screen
 };
 
 int
 load_controller_modules(struct weston_compositor *compositor, const char *modules,
-			int *argc, char *argv[])
+			int *argc, char *argv[], struct weston_config *config)
 {
 	const char *p, *end;
 	char buffer[256];
 	int (*controller_module_init)(struct weston_compositor *compositor,
 				      int *argc, char *argv[],
+				      struct weston_config *config,
 				      const struct ivi_controller_interface *interface,
 				      size_t interface_version);
 
@@ -3005,6 +3091,7 @@ load_controller_modules(struct weston_compositor *compositor, const char *module
 			return -1;
 
 		if (controller_module_init(compositor, argc, argv,
+					   config,
 					   &ivi_controller_interface,
 				sizeof(struct ivi_controller_interface)) != 0) {
 			weston_log("ivi-shell: Initialization of controller module fails");

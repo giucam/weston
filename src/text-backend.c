@@ -109,7 +109,6 @@ struct text_backend {
 	} input_method;
 
 	struct wl_listener seat_created_listener;
-	struct wl_listener destroy_listener;
 };
 
 static void
@@ -1019,13 +1018,14 @@ handle_seat_created(struct wl_listener *listener, void *data)
 }
 
 static void
-text_backend_configuration(struct text_backend *text_backend)
+text_backend_configuration(struct text_backend *text_backend,
+			   struct weston_config *config)
 {
 	struct weston_config_section *section;
 	char *client;
 	int ret;
 
-	section = weston_config_get_section(text_backend->compositor->config,
+	section = weston_config_get_section(config,
 					    "input-method", NULL, NULL);
 	ret = asprintf(&client, "%s/weston-keyboard",
 		       weston_config_get_libexec_dir());
@@ -1037,33 +1037,30 @@ text_backend_configuration(struct text_backend *text_backend)
 	free(client);
 }
 
-static void
-text_backend_notifier_destroy(struct wl_listener *listener, void *data)
+WL_EXPORT void
+text_backend_destroy(struct text_backend *text_backend)
 {
-	struct text_backend *text_backend =
-		container_of(listener, struct text_backend, destroy_listener);
-
 	if (text_backend->input_method.client)
 		wl_client_destroy(text_backend->input_method.client);
 
 	free(text_backend->input_method.path);
-
 	free(text_backend);
 }
 
-WL_EXPORT int
-text_backend_init(struct weston_compositor *ec)
+WL_EXPORT struct text_backend *
+text_backend_init(struct weston_compositor *ec,
+	    struct weston_config *config)
 {
 	struct text_backend *text_backend;
 	struct weston_seat *seat;
 
 	text_backend = zalloc(sizeof(*text_backend));
 	if (text_backend == NULL)
-		return -1;
+		return NULL;
 
 	text_backend->compositor = ec;
 
-	text_backend_configuration(text_backend);
+	text_backend_configuration(text_backend, config);
 
 	wl_list_for_each(seat, &ec->seat_list, link)
 		text_backend_seat_created(text_backend, seat);
@@ -1071,10 +1068,7 @@ text_backend_init(struct weston_compositor *ec)
 	wl_signal_add(&ec->seat_created_signal,
 		      &text_backend->seat_created_listener);
 
-	text_backend->destroy_listener.notify = text_backend_notifier_destroy;
-	wl_signal_add(&ec->destroy_signal, &text_backend->destroy_listener);
-
 	text_input_manager_create(ec);
 
-	return 0;
+	return text_backend;
 }

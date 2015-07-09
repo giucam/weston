@@ -1,5 +1,7 @@
 /*
- * Copyright © 2015 Collabora, Ltd.
+ * Copyright © 2010-2011 Intel Corporation
+ * Copyright © 2008-2011 Kristian Høgsberg
+ * Copyright © 2012-2015 Collabora, Ltd.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,19 +25,12 @@
  * SOFTWARE.
  */
 
-#ifndef IVI_TEST_H
-#define IVI_TEST_H
+#ifndef WESTON_WESTON_H
+#define WESTON_WESTON_H
 
-/*
- * IVI_TEST_SURFACE_ID_BASE is an arbitrary number picked for the
- * IVI tests. The only requirement is that it does not clash with
- * any other ivi-id range used in Weston.
- */
-#define IVI_TEST_SURFACE_ID_BASE 0xffc01200
-#define IVI_TEST_SURFACE_ID(i) (IVI_TEST_SURFACE_ID_BASE + i)
-#define IVI_TEST_LAYER_ID_BASE 0xeef01200
-#define IVI_TEST_LAYER_ID(i) (IVI_TEST_LAYER_ID_BASE + i)
+struct weston_compositor;
 
-#define IVI_TEST_SURFACE_COUNT (3)
+void
+screenshooter_create(struct weston_compositor *ec);
 
-#endif /* IVI_TEST_H */
+#endif

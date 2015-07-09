@@ -31,6 +31,9 @@ AM_SILENT_RULES([yes])
 AC_PROG_CC
 AC_PROG_SED
 
+ABI_VERSION=1
+AC_SUBST(ABI_VERSION)
+
 # Initialize libtool
 LT_PREREQ([2.2])
 LT_INIT([disable-static])
@@ -354,6 +357,12 @@ PKG_CHECK_MODULES(SYSTEMD_LOGIN_209, [libsystemd-login >= 209],
 AS_IF([test "x$have_systemd_login_209" = "xyes"],
       [AC_DEFINE([HAVE_SYSTEMD_LOGIN_209], [1], [Have systemd-login >= 209])])
 
+AC_ARG_ENABLE(weston-binaries,
+              AS_HELP_STRING([--enable-weston-binaries],
+                             [build the weston binaries]),,
+              enable_weston_binaries=yes)
+AM_CONDITIONAL(BUILD_WESTON_BINARIES, test x$enable_weston_binaries == xyes)
+
 AC_ARG_ENABLE(weston-launch, [  --enable-weston-launch],, enable_weston_launch=yes)
 AM_CONDITIONAL(BUILD_WESTON_LAUNCH, test x$enable_weston_launch == xyes)
 if test x$enable_weston_launch == xyes; then
@@ -364,11 +373,6 @@ if test x$enable_weston_launch == xyes; then
   PAM_LIBS=-lpam
   AC_SUBST(PAM_LIBS)
 fi
-
-if test x$enable_egl = xyes; then
-  PKG_CHECK_MODULES(GLU, [glu], [have_glu=yes], [have_glu=no])
-fi
-AM_CONDITIONAL(HAVE_GLU, test "x$have_glu" = "xyes")
 
 AM_CONDITIONAL(HAVE_PANGO, test "x$have_pango" = "xyes")
 
@@ -509,7 +513,7 @@ if test x$wayland_scanner = x; then
 	wayland_scanner=`$PKG_CONFIG --variable=wayland_scanner wayland-scanner`
 fi
 
-AC_CONFIG_FILES([Makefile src/version.h src/weston.pc])
+AC_CONFIG_FILES([Makefile src/version.h src/weston.pc src/libweston.pc])
 
 AM_CONDITIONAL([HAVE_GIT_REPO], [test -f $srcdir/.git/logs/HEAD])
 
@@ -518,6 +522,8 @@ AC_OUTPUT
 AC_MSG_RESULT([
 	Native Backend			${WESTON_NATIVE_BACKEND}
 	setuid Install			${enable_setuid_install}
+
+	Buld the weston binaries	${enable_weston_binaries}
 
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
@@ -553,7 +559,6 @@ AC_MSG_RESULT([
 	Install Demo Clients		${enable_demo_clients_install}
 
 	Colord Support			${have_colord}
-	GLU Support			${have_glu}
 	LCMS2 Support			${have_lcms}
 	libwebp Support			${have_webp}
 	libunwind Support		${have_libunwind}

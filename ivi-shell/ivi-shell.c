@@ -130,6 +130,22 @@ ivi_shell_surface_configure(struct weston_surface *surface,
 	}
 }
 
+static void
+layout_surface_cleanup(struct ivi_shell_surface *ivisurf)
+{
+	assert(ivisurf->layout_surface != NULL);
+
+	ivi_layout_surface_destroy(ivisurf->layout_surface);
+	ivisurf->layout_surface = NULL;
+
+	ivisurf->surface->configure = NULL;
+	ivisurf->surface->configure_private = NULL;
+	ivisurf->surface = NULL;
+
+	// destroy weston_surface destroy signal.
+	wl_list_remove(&ivisurf->surface_destroy_listener.link);
+}
+
 /*
  * The ivi_surface wl_resource destructor.
  *
@@ -139,9 +155,18 @@ static void
 shell_destroy_shell_surface(struct wl_resource *resource)
 {
 	struct ivi_shell_surface *ivisurf = wl_resource_get_user_data(resource);
-	if (ivisurf != NULL) {
-		ivisurf->resource = NULL;
-	}
+
+	if (ivisurf == NULL)
+		return;
+
+	assert(ivisurf->resource == resource);
+
+	if (ivisurf->layout_surface != NULL)
+		layout_surface_cleanup(ivisurf);
+
+	wl_list_remove(&ivisurf->link);
+
+	free(ivisurf);
 }
 
 /* Gets called through the weston_surface destroy signal. */
@@ -154,21 +179,8 @@ shell_handle_surface_destroy(struct wl_listener *listener, void *data)
 
 	assert(ivisurf != NULL);
 
-	if (ivisurf->surface!=NULL) {
-		ivisurf->surface->configure = NULL;
-		ivisurf->surface->configure_private = NULL;
-		ivisurf->surface = NULL;
-	}
-
-	wl_list_remove(&ivisurf->surface_destroy_listener.link);
-	wl_list_remove(&ivisurf->link);
-
-	if (ivisurf->resource != NULL) {
-		wl_resource_set_user_data(ivisurf->resource, NULL);
-		ivisurf->resource = NULL;
-	}
-	free(ivisurf);
-
+	if (ivisurf->layout_surface != NULL)
+		layout_surface_cleanup(ivisurf);
 }
 
 /* Gets called, when a client sends ivi_surface.destroy request. */
@@ -331,6 +343,7 @@ shell_destroy(struct wl_listener *listener, void *data)
 		container_of(listener, struct ivi_shell, destroy_listener);
 	struct ivi_shell_surface *ivisurf, *next;
 
+	text_backend_destroy(shell->text_backend);
 	input_panel_destroy(shell);
 
 	wl_list_for_each_safe(ivisurf, next, &shell->ivi_surface_list, link) {
@@ -372,11 +385,10 @@ init_ivi_shell(struct weston_compositor *compositor, struct ivi_shell *shell,
 
 static int
 ivi_shell_setting_create(struct ivi_shell_setting *dest,
-			 struct weston_compositor *compositor,
+			 struct weston_config *config,
 			 int *argc, char *argv[])
 {
 	int result = 0;
-	struct weston_config *config = compositor->config;
 	struct weston_config_section *section;
 
 	const struct weston_option ivi_shell_options[] = {
@@ -406,7 +418,8 @@ ivi_shell_setting_create(struct ivi_shell_setting *dest,
  */
 WL_EXPORT int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[])
+           int *argc, char *argv[],
+           struct weston_config *config)
 {
 	struct ivi_shell *shell;
 	struct ivi_shell_setting setting = { };
@@ -416,7 +429,7 @@ module_init(struct weston_compositor *compositor,
 	if (shell == NULL)
 		return -1;
 
-	if (ivi_shell_setting_create(&setting, compositor, argc, argv) != 0)
+	if (ivi_shell_setting_create(&setting, config, argc, argv) != 0)
 		return -1;
 
 	init_ivi_shell(compositor, shell, &setting);
@@ -427,7 +440,8 @@ module_init(struct weston_compositor *compositor,
 	if (input_panel_setup(shell) < 0)
 		goto out_settings;
 
-	if (text_backend_init(compositor) < 0)
+	shell->text_backend = text_backend_init(compositor, config);
+	if (!shell->text_backend)
 		goto out_settings;
 
 	if (wl_global_create(compositor->wl_display,
@@ -438,8 +452,7 @@ module_init(struct weston_compositor *compositor,
 	ivi_layout_init_with_compositor(compositor);
 
 	/* Call module_init of ivi-modules which are defined in weston.ini */
-	if (load_controller_modules(compositor, setting.ivi_module,
-				    argc, argv) < 0)
+	if (load_controller_modules(compositor, setting.ivi_module, argc, argv, config) < 0)
 		goto out_settings;
 
 	retval = 0;

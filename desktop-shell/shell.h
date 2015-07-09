@@ -118,6 +118,7 @@ struct shell_output {
 
 struct desktop_shell {
 	struct weston_compositor *compositor;
+	struct weston_config *config;
 
 	struct wl_listener idle_listener;
 	struct wl_listener wake_listener;
@@ -148,6 +149,8 @@ struct desktop_shell {
 	bool showing_input_panels;
 	bool prepare_event_sent;
 
+	struct text_backend *text_backend;
+
 	struct {
 		struct weston_surface *surface;
 		pixman_box32_t cursor_rectangle;
@@ -171,14 +174,6 @@ struct desktop_shell {
 		struct workspace *anim_from;
 		struct workspace *anim_to;
 	} workspaces;
-
-	struct {
-		char *path;
-		int duration;
-		struct wl_resource *binding;
-		struct weston_process process;
-		struct wl_event_source *timer;
-	} screensaver;
 
 	struct {
 		struct wl_resource *binding;

@@ -603,12 +603,37 @@ enum weston_capability {
 	WESTON_CAP_VIEW_CLIP_MASK		= 0x0010,
 };
 
+struct weston_backend_output_config {
+	uint32_t transform;
+	int32_t width;
+	int32_t height;
+	int scale;
+};
+
+struct weston_backend {
+	void (*destroy)(struct weston_compositor *ec);
+	void (*restore)(struct weston_compositor *ec);
+	struct weston_output *
+		(*create_output)(struct weston_compositor *ec,
+				 const char *name,
+				 struct weston_backend_output_config *config);
+};
+
+struct weston_backend_config {
+};
+
+struct weston_module_config {
+
+};
+
+struct weston_module {
+};
+
 struct weston_compositor {
 	struct wl_signal destroy_signal;
 
 	struct wl_display *wl_display;
 	struct weston_shell_interface shell_interface;
-	struct weston_config *config;
 
 	/* surface signals */
 	struct wl_signal create_surface_signal;
@@ -664,8 +689,7 @@ struct weston_compositor {
 
 	pixman_format_code_t read_format;
 
-	void (*destroy)(struct weston_compositor *ec);
-	void (*restore)(struct weston_compositor *ec);
+	struct weston_backend *backend;
 
 	struct weston_launcher *launcher;
 
@@ -685,6 +709,9 @@ struct weston_compositor {
 	int32_t repaint_msec;
 
 	int exit_code;
+
+	void *user_data;
+	void (*exit)(struct weston_compositor *c);
 };
 
 struct weston_buffer {
@@ -1333,9 +1360,17 @@ weston_buffer_reference(struct weston_buffer_reference *ref,
 uint32_t
 weston_compositor_get_time(void);
 
+void
+weston_compositor_destroy(struct weston_compositor *ec);
+struct weston_compositor *
+weston_compositor_create(struct wl_display *display, void *user_data);
 int
-weston_compositor_init(struct weston_compositor *ec, struct wl_display *display,
-		       int *argc, char *argv[], struct weston_config *config);
+weston_compositor_init_backend(struct weston_compositor *c, const char *backend,
+			       struct weston_backend_config *backend_config);
+void
+weston_compositor_exit(struct weston_compositor *ec);
+void *
+weston_compositor_get_user_data(struct weston_compositor *compositor);
 int
 weston_compositor_set_presentation_clock(struct weston_compositor *compositor,
 					 clockid_t clk_id);
@@ -1406,10 +1441,9 @@ weston_compositor_xkb_destroy(struct weston_compositor *ec);
 /* String literal of spaces, the same width as the timestamp. */
 #define STAMP_SPACE "               "
 
+typedef int (*log_func_t)(const char *fmt, va_list ap);
 void
-weston_log_file_open(const char *filename);
-void
-weston_log_file_close(void);
+weston_log_set_handler(log_func_t log, log_func_t cont);
 int
 weston_vlog(const char *fmt, va_list ap);
 int
@@ -1439,7 +1473,10 @@ int
 tty_activate_vt(struct tty *tty, int vt);
 
 void
-screenshooter_create(struct weston_compositor *ec);
+weston_recorder_start(struct weston_compositor *ec,
+		      struct weston_output *output);
+void
+weston_recorder_stop(struct weston_compositor *ec);
 
 enum weston_screenshooter_outcome {
 	WESTON_SCREENSHOOTER_SUCCESS,
@@ -1456,8 +1493,14 @@ weston_screenshooter_shoot(struct weston_output *output, struct weston_buffer *b
 struct clipboard *
 clipboard_create(struct weston_seat *seat);
 
-int
-text_backend_init(struct weston_compositor *ec);
+struct text_backend;
+
+struct text_backend *
+text_backend_init(struct weston_compositor *ec,
+		  struct weston_config *config);
+
+void
+text_backend_destroy(struct text_backend *text_backend);
 
 struct weston_process;
 typedef void (*weston_process_cleanup_func_t)(struct weston_process *process,
@@ -1534,13 +1577,16 @@ weston_output_mode_switch_to_native(struct weston_output *output);
 int
 noop_renderer_init(struct weston_compositor *ec);
 
-struct weston_compositor *
-backend_init(struct wl_display *display, int *argc, char *argv[],
-	     struct weston_config *config);
-
+int
+backend_init(struct weston_compositor *c,
+             struct weston_backend_config *config);
 int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[]);
+	    int *argc, char *argv[],
+	    struct weston_config *config);
+struct weston_module *
+module_init2(struct weston_compositor *compositor,
+	     struct weston_module_config *config);
 
 void
 weston_transformed_coord(int width, int height,
@@ -1560,6 +1606,10 @@ weston_transformed_region(int width, int height,
 
 void *
 weston_load_module(const char *name, const char *entrypoint);
+struct weston_module *
+weston_compositor_init_module(struct weston_compositor *compositor,
+			      const char *module,
+			      struct weston_module_config *config);
 
 int
 weston_parse_transform(const char *transform, uint32_t *out);

@@ -35,6 +35,7 @@
 #define EVENT_TYPE(event) ((event)->response_type & ~SEND_EVENT_MASK)
 
 struct weston_xserver {
+	struct weston_module base;
 	struct wl_display *wl_display;
 	struct wl_event_loop *loop;
 	struct wl_event_source *sigchld_source;
@@ -45,12 +46,15 @@ struct weston_xserver {
 	int wm_fd;
 	int display;
 	struct wl_event_source *sigusr1_source;
-	struct weston_process process;
 	struct wl_resource *resource;
 	struct wl_client *client;
 	struct weston_compositor *compositor;
 	struct weston_wm *wm;
 	struct wl_listener destroy_listener;
+	pid_t pid;
+	void *user_data;
+	pid_t (*spawn_xserver)(void *user_data, int display, int abstract_fd,
+			       int unix_fd, int sv_fd, int wm_fd);
 };
 
 struct weston_wm {

@@ -1,5 +1,6 @@
 /*
- * Copyright © 2015 Collabora, Ltd.
+ * Copyright © 2013 Hardening <rdp.effort@gmail.com>
+ * Copyright © 2015 Giulio Camuffo
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,19 +24,31 @@
  * SOFTWARE.
  */
 
-#ifndef IVI_TEST_H
-#define IVI_TEST_H
+#ifndef WESTON_COMPOSITOR_RDP_H
+#define WESTON_COMPOSITOR_RDP_H
 
-/*
- * IVI_TEST_SURFACE_ID_BASE is an arbitrary number picked for the
- * IVI tests. The only requirement is that it does not clash with
- * any other ivi-id range used in Weston.
- */
-#define IVI_TEST_SURFACE_ID_BASE 0xffc01200
-#define IVI_TEST_SURFACE_ID(i) (IVI_TEST_SURFACE_ID_BASE + i)
-#define IVI_TEST_LAYER_ID_BASE 0xeef01200
-#define IVI_TEST_LAYER_ID(i) (IVI_TEST_LAYER_ID_BASE + i)
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
-#define IVI_TEST_SURFACE_COUNT (3)
+#include "compositor.h"
 
-#endif /* IVI_TEST_H */
+struct weston_rdp_backend_config {
+	struct weston_backend_config base;
+
+	int width;
+	int height;
+	const char *bind_address;
+	int port;
+	const char *rdp_key;
+	const char *server_cert;
+	const char *server_key;
+	int env_socket;
+	int no_clients_resize;
+};
+
+#ifdef  __cplusplus
+}
+#endif
+
+#endif

@@ -470,7 +470,7 @@ struct ivi_controller_interface {
 	/**
 	 * \brief Removes a ivi_layer which is currently managed by the service
 	 */
-	void (*layer_remove)(struct ivi_layout_layer *ivilayer);
+	void (*layer_destroy)(struct ivi_layout_layer *ivilayer);
 
 	/**
 	 * \brief Get all ivi_layers which are currently registered and managed
@@ -783,6 +783,27 @@ struct ivi_controller_interface {
 				int32_t x, int32_t y,
 				int32_t width, int32_t height);
 
+	/**
+	 * remove notification by callback on property changes of ivi_surface
+	 */
+	void (*surface_remove_notification_by_callback)(struct ivi_layout_surface *ivisurf,
+							surface_property_notification_func callback,
+							void *userdata);
+
+	/**
+	 * \brief remove notification by callback on property changes of ivi_layer
+	 */
+	void (*layer_remove_notification_by_callback)(struct ivi_layout_layer *ivilayer,
+						      layer_property_notification_func callback,
+						      void *userdata);
+
+	/**
+	 * \brief get id of ivi_screen from ivi_layout_screen
+	 *
+	 *
+	 * \return id of ivi_screen
+	 */
+	uint32_t (*get_id_of_screen)(struct ivi_layout_screen *iviscrn);
 };
 
 #ifdef __cplusplus
