@@ -168,6 +168,7 @@ struct hwc11_buffer_state {
 	struct wl_list link;
 	struct weston_view *view;
 	int layer;
+	int x, y, width, height;
 	EGLClientBuffer egl_buffer;
 	struct weston_buffer_reference buffer;
 	int release_fence_fd;
@@ -894,10 +895,10 @@ hwc11_build_layer_list(struct hwcomposer_output *o)
 						buf_state->egl_buffer, &handle);
 			buf_state->layer = i;
 			hwc11_populate_layer(&dc->hwLayers[i],
-					buf_state->view->geometry.x,
-					buf_state->view->geometry.y,
-					buf_state->view->surface->width,
-					buf_state->view->surface->height,
+					buf_state->x,
+					buf_state->y,
+					buf_state->width,
+					buf_state->height,
 					(buffer_handle_t)handle, HWC_FRAMEBUFFER);
 			++i;
 		}
@@ -1063,6 +1064,7 @@ hwc11_assign_planes(struct hwcomposer_output *o)
 	struct weston_view *ev, *next;
 	struct weston_plane *primary, *next_plane;
 	struct hwc11_buffer_state *buf_state;
+	const pixman_box32_t *box;
 
 	HWC_LOG("assign planes for output %p, %d views\n", o,
 		wl_list_length(&c->base.view_list));
@@ -1104,6 +1106,13 @@ hwc11_assign_planes(struct hwcomposer_output *o)
 			buf_state->view = ev;
 			buf_state->release_fence_fd = -1;
 			buf_state->accepted = true;
+
+			box = pixman_region32_extents(&ev->transform.boundingbox);
+			buf_state->x = box->x1;
+			buf_state->y = box->y1;
+			buf_state->width = box->x2 - box->x1;
+			buf_state->height = box->y2 - box->y1;
+
 			weston_buffer_reference(&buf_state->buffer,
 						s->buffer_ref.buffer);
 			wl_list_insert(&hwco->new_layer_buffer_list,
