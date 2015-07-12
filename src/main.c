@@ -47,6 +47,8 @@
 #include "git-version.h"
 #include "version.h"
 
+#include "compositor-drm.h"
+
 static struct wl_list child_process_list;
 static struct weston_compositor *segv_compositor;
 
@@ -664,12 +666,135 @@ init_backend_new(struct weston_compositor *compositor, const char *backend,
 }
 
 static int
+parse_modeline(const char *s, struct weston_drm_backend_modeline *mode)
+{
+	char hsync[16];
+	char vsync[16];
+	float fclock;
+
+	mode->flags = 0;
+
+	if (sscanf(s, "%f %hd %hd %hd %hd %hd %hd %hd %hd %15s %15s",
+		   &fclock,
+		   &mode->hdisplay,
+		   &mode->hsync_start,
+		   &mode->hsync_end,
+		   &mode->htotal,
+		   &mode->vdisplay,
+		   &mode->vsync_start,
+		   &mode->vsync_end,
+		   &mode->vtotal, hsync, vsync) != 11)
+		return -1;
+
+	mode->clock = fclock * 1000;
+	if (strcmp(hsync, "+hsync") == 0)
+		mode->flags |= WESTON_DRM_BACKEND_MODELINE_FLAG_PHSYNC;
+	else if (strcmp(hsync, "-hsync") == 0)
+		mode->flags |= WESTON_DRM_BACKEND_MODELINE_FLAG_NHSYNC;
+	else
+		return -1;
+
+	if (strcmp(vsync, "+vsync") == 0)
+		mode->flags |= WESTON_DRM_BACKEND_MODELINE_FLAG_PVSYNC;
+	else if (strcmp(vsync, "-vsync") == 0)
+		mode->flags |= WESTON_DRM_BACKEND_MODELINE_FLAG_NVSYNC;
+	else
+		return -1;
+
+	return 0;
+}
+
+static void
+drm_configure_output(struct weston_compositor *c, const char *name,
+		     struct weston_drm_backend_output_config *config)
+{
+	struct weston_config *wc = weston_compositor_get_user_data(c);
+	struct weston_config_section *section;
+	char *s;
+
+	section = weston_config_get_section(wc, "output", "name", name);
+	weston_config_section_get_string(section, "mode", &s, "preferred");
+	if (strcmp(s, "off") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_OFF;
+	else if (strcmp(s, "preferred") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_PREFERRED;
+	else if (strcmp(s, "current") == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_CURRENT;
+	else if (sscanf(s, "%dx%d", &config->base.width,
+				    &config->base.height) == 2)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_MODE;
+	else if (parse_modeline(s, &config->modeline) == 0)
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_MODELINE;
+	else {
+		weston_log("Invalid mode \"%s\" for output %s\n",
+			   s, name);
+		config->type = WESTON_DRM_BACKEND_OUTPUT_TYPE_PREFERRED;
+	}
+	free(s);
+
+	weston_config_section_get_int(section, "scale", &config->base.scale, 1);
+	weston_config_section_get_string(section, "transform", &s, "normal");
+	if (weston_parse_transform(s, &config->base.transform) < 0)
+		weston_log("Invalid transform \"%s\" for output %s\n",
+			   s, name);
+	free(s);
+
+	weston_config_section_get_string(section,
+					 "gbm-format", &config->format, NULL);
+	weston_config_section_get_string(section, "seat", &config->seat, "");
+}
+
+static int
+init_drm_backend(struct weston_compositor *c, const char *backend,
+		 int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_drm_backend_config config = {
+		.use_pixman = false,
+		.connector = 0,
+		.seat_id = NULL,
+		.format = NULL,
+		.tty = 0,
+		.default_current_mode = false,
+		.configure_output = drm_configure_output,
+	};
+	struct weston_config_section *section;
+	char *format = NULL, *seat = NULL;
+	int ret = 0;
+
+	const struct weston_option options[] = {
+		{ WESTON_OPTION_INTEGER, "connector", 0, &config.connector },
+		{ WESTON_OPTION_STRING, "seat", 0, &seat },
+		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
+		{ WESTON_OPTION_BOOLEAN, "current-mode", 0,
+					 &config.default_current_mode },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+	};
+
+	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+
+	section = weston_config_get_section(wc, "core", NULL, NULL);
+	weston_config_section_get_string(section,
+					 "gbm-format", &format,
+					 format);
+	config.format = format;
+	config.seat_id = seat;
+
+	if (init_backend_new(c, backend, &config.base) < 0)
+		ret = -1;
+
+	free(seat);
+	free(format);
+	return ret;
+}
+
+static int
 init_backend(struct weston_compositor *compositor, const char *backend,
 	     int *argc, char **argv, struct weston_config *config)
 {
-#if 0
+
 	if (strstr(backend, "drm-backend.so"))
 		return init_drm_backend(compositor, backend, argc, argv, config);
+#if 0
 	else if (strstr(backend, "wayland-backend.so"))
 		return init_wayland_backend(compositor, backend, argc, argv, config);
 	else if (strstr(backend, "x11-backend.so"))

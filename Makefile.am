@@ -72,6 +72,7 @@ weston_SOURCES =					\
 	src/log.c					\
 	src/compositor.c				\
 	src/compositor.h				\
+	src/compositor-drm.h				\
 	src/input.c					\
 	src/data-device.c				\
 	src/screenshooter.c				\
@@ -188,6 +189,7 @@ westonincludedir = $(includedir)/weston
 westoninclude_HEADERS =				\
 	src/version.h				\
 	src/compositor.h			\
+	src/compositor-drm.h			\
 	src/timeline-object.h			\
 	shared/matrix.h				\
 	shared/config-parser.h			\
@@ -251,6 +253,7 @@ drm_backend_la_CFLAGS =				\
 	$(AM_CFLAGS)
 drm_backend_la_SOURCES =			\
 	src/compositor-drm.c			\
+	src/compositor-drm.h			\
 	$(INPUT_BACKEND_SOURCES)		\
 	shared/helpers.h			\
 	shared/timespec-util.h			\
