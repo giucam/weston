@@ -808,9 +808,9 @@ hwc11_create_hwc_output(struct hwcomposer_output *o)
 	hwc11_populate_layer(&list->hwLayers[0], 0, 0, o->base.width,
 	                     o->base.height, 0, HWC_FRAMEBUFFER_TARGET);
 
-	w = createHWComposerNativeWindow(o->base.width, o->base.height,
-	                                 HAL_PIXEL_FORMAT_RGBA_8888,
-	                                 hwc11_window_present, o);
+	w = HWCNativeWindowCreate(o->base.width, o->base.height,
+	                          HAL_PIXEL_FORMAT_RGBA_8888,
+	                          hwc11_window_present, o);
 
 	hwco = zalloc(sizeof *hwco);
 	hwco->base.native_window = (EGLNativeWindowType)w;
