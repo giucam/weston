@@ -842,8 +842,8 @@ hwc11_output_repaint(struct hwcomposer_output *o, pixman_region32_t *damage)
 
 	/* We render with EGL only if we have something to render, that is
 	 * if damage is not empty. Otherwise we use the old EGL buffer */
-	if ((hwco->use_egl || !hwco->layer_list) &&
-	    pixman_region32_not_empty(damage)) {
+	if (!hwco->layer_list || (hwco->use_egl &&
+	    pixman_region32_not_empty(damage))) {
 		c->renderer->repaint_output(&o->base, damage);
 	} else {
 		HWC_LOG("layers only\n");
