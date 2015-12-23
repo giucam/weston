@@ -9,3 +9,4 @@ Name: Weston Plugin API
 Description: Header files for Weston plugin development
 Version: @WESTON_VERSION@
 Cflags: -I${includedir}
+Libs: -L${libdir} -lweston-1
