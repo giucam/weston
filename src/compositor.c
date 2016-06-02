@@ -4872,3 +4872,18 @@ weston_compositor_get_user_data(struct weston_compositor *compositor)
 {
 	return compositor->user_data;
 }
+
+WL_EXPORT int
+weston_compositor_load_xwayland(struct weston_compositor *compositor)
+{
+	int (*module_init)(struct weston_compositor *ec,
+			   int *argc, char *argv[]);
+	int argc = 0;
+
+	module_init = weston_load_module("xwayland.so", "module_init");
+	if (!module_init)
+		return -1;
+	if (module_init(compositor, &argc, NULL) < 0)
+		return -1;
+	return 0;
+}

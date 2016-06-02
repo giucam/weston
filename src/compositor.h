@@ -1705,6 +1705,9 @@ weston_seat_get_pointer(struct weston_seat *seat);
 struct weston_touch *
 weston_seat_get_touch(struct weston_seat *seat);
 
+int
+weston_compositor_load_xwayland(struct weston_compositor *compositor);
+
 #ifdef  __cplusplus
 }
 #endif

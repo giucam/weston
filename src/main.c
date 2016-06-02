@@ -751,11 +751,17 @@ load_modules(struct weston_compositor *ec, const char *modules,
 	while (*p) {
 		end = strchrnul(p, ',');
 		snprintf(buffer, sizeof buffer, "%.*s", (int) (end - p), p);
-		module_init = wet_load_module(buffer, "module_init");
-		if (!module_init)
-			return -1;
-		if (module_init(ec, argc, argv) < 0)
-			return -1;
+
+		if (strcmp(buffer, "xwayland.so") == 0) {
+			if (wet_load_xwayland(ec) < 0)
+				return -1;
+		} else {
+			module_init = wet_load_module(buffer, "module_init");
+			if (!module_init)
+				return -1;
+			if (module_init(ec, argc, argv) < 0)
+				return -1;
+		}
 		p = end;
 		while (*p == ',')
 			p++;
