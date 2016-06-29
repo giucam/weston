@@ -99,11 +99,15 @@ switch_vt_binding(struct weston_keyboard *keyboard,
 	struct weston_compositor *compositor = data;
 	struct weston_launcher *launcher = compositor->launcher;
 	int vt = key - KEY_F1 + 1;
+	weston_compositor_vt_switcher_func_t switcher = launcher->vt_switcher;
 
 	if (vt == launcher->iface->get_vt(launcher))
 		return;
 
-	weston_launcher_activate_vt(launcher, vt);
+	if (switcher)
+		launcher->vt_switcher(compositor, vt);
+	else
+		weston_launcher_activate_vt(launcher, vt);
 }
 
 WL_EXPORT void

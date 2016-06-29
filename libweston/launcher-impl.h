@@ -39,6 +39,7 @@ struct launcher_interface {
 
 struct weston_launcher {
 	struct launcher_interface *iface;
+	weston_compositor_vt_switcher_func_t vt_switcher;
 };
 
 extern struct launcher_interface launcher_logind_iface;

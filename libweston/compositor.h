@@ -1372,6 +1372,45 @@ void
 weston_compositor_set_default_pointer_grab(struct weston_compositor *compositor,
 			const struct weston_pointer_grab_interface *interface);
 
+/**
+ * Request a vt switch for the compositor.
+ *
+ * This will only work if the compositor is running as the owner of
+ * the session.
+ *
+ * \param launcher The compositor instance.
+ * \param vt The vt to switch to.
+ *
+ * Returns 0 on success, -1 otherwise.
+ *
+ * \sa weston_compositor_set_vt_switcher
+ */
+int
+weston_compositor_activate_vt(struct weston_compositor *compositor, int vt);
+
+typedef void (*weston_compositor_vt_switcher_func_t)(
+		struct weston_compositor *compositor, int vt);
+/**
+ * Set the vt switcher for the compositor.
+ *
+ * If the compositor is the owner of the session, the CTRL+ALT+FN key
+ * combinations will trigger a vt switch. The default behavior is to do
+ * the switching immediately, but some compositors may want to make sure to
+ * e.g. draw a lock screen before doing the switch.
+ * This function allows to register a custom vt switcher so that the actual
+ * vt switch can be controlled by calling \a weston_compositor_activate_vt.
+ *
+ * \param compositor The compositor instance.
+ * \param switcher The vt switcher function, which will be called when a
+ *                 CTRL+ALT+FN key combination is pressed, carrying the
+ *                 requested vt.
+ *
+ * \sa weston_compositor_activate_vt
+ */
+void
+weston_compositor_set_vt_switcher(struct weston_compositor *compositor,
+				  weston_compositor_vt_switcher_func_t switcher);
+
 int
 weston_environment_get_fd(const char *env);
 
