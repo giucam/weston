@@ -34,6 +34,7 @@ struct launcher_interface {
 	void (* close) (struct weston_launcher *launcher, int fd);
 	int (* activate_vt) (struct weston_launcher *launcher, int vt);
 	void (* restore) (struct weston_launcher *launcher);
+	int (* get_vt) (struct weston_launcher *launcher);
 };
 
 struct weston_launcher {
