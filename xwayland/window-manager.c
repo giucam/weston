@@ -140,6 +140,7 @@ struct weston_wm_window {
 	char *machine;
 	char *class;
 	char *name;
+	char *role;
 	struct weston_wm_window *transient_for;
 	uint32_t protocols;
 	xcb_atom_t type;
@@ -414,6 +415,7 @@ weston_wm_window_read_properties(struct weston_wm_window *window)
 		{ wm->atom.net_wm_pid, XCB_ATOM_CARDINAL, F(pid) },
 		{ wm->atom.motif_wm_hints, TYPE_MOTIF_WM_HINTS, 0 },
 		{ wm->atom.wm_client_machine, XCB_ATOM_WM_CLIENT_MACHINE, F(machine) },
+		{ wm->atom.wm_window_role, XCB_ATOM_STRING, F(role) },
 	};
 #undef F
 
@@ -544,6 +546,10 @@ weston_wm_window_read_properties(struct weston_wm_window *window)
 		frame_set_title(window->frame, window->name);
 	if (window->shsurf && window->pid > 0)
 		shell_interface->set_pid(window->shsurf, window->pid);
+	if (window->shsurf && window->class)
+		shell_interface->set_class(window->shsurf, window->class);
+	if (window->shsurf && window->role)
+		shell_interface->set_id(window->shsurf, window->role);
 }
 
 static void
@@ -2023,6 +2029,7 @@ weston_wm_get_resources(struct weston_wm *wm)
 		{ "WM_STATE",		F(atom.wm_state) },
 		{ "WM_S0",		F(atom.wm_s0) },
 		{ "WM_CLIENT_MACHINE",	F(atom.wm_client_machine) },
+		{ "WM_WINDOW_ROLE",	F(atom.wm_window_role) },
 		{ "_NET_WM_CM_S0",	F(atom.net_wm_cm_s0) },
 		{ "_NET_WM_NAME",	F(atom.net_wm_name) },
 		{ "_NET_WM_PID",	F(atom.net_wm_pid) },
@@ -2534,10 +2541,30 @@ xserver_map_shell_surface(struct weston_wm_window *window,
 						      window->surface,
 						      &shell_client);
 
+#define ISTYPE(t) (window->type == wm->atom.net_wm_window_type_ ## t) ? #t
+	printf("map x window:\n");
+	printf("    title: %s\n",window->name);
+	printf("    override_redirect: %d, transient: %d, inactive: %d\n",
+	       window->override_redirect != 0,
+	       window->transient_for && window->transient_for->surface,
+	       weston_wm_window_type_inactive(window));
+	printf("    type: %s\n", ISTYPE(tooltip) : ISTYPE(dropdown) :
+	                         ISTYPE(menu) : ISTYPE(normal) :
+	                         ISTYPE(dialog) : ISTYPE(popup) :
+	                         ISTYPE(desktop) : ISTYPE(dock) :
+	                         ISTYPE(toolbar) : ISTYPE(utility) :
+	                         ISTYPE(splash) : ISTYPE(notification) :
+	                         ISTYPE(combo) : ISTYPE(dnd) : "unknown");
+#undef ISTYPE
+
 	if (window->name)
 		shell_interface->set_title(window->shsurf, window->name);
 	if (window->pid > 0)
 		shell_interface->set_pid(window->shsurf, window->pid);
+	if (window->role)
+		shell_interface->set_id(window->shsurf, window->role);
+	if (window->class)
+		shell_interface->set_class(window->shsurf, window->class);
 
 	if (window->fullscreen) {
 		window->saved_width = window->width;

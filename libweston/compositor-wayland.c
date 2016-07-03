@@ -1052,7 +1052,7 @@ wayland_output_create(struct wayland_backend *b, int x, int y,
 	wl_list_init(&output->shm.buffers);
 	wl_list_init(&output->shm.free_buffers);
 
-	weston_output_init(&output->base, b->compositor, x, y, width, height,
+	weston_output_init(&output->base, b->compositor, x, y, -1, -1,
 			   transform, scale);
 
 	if (b->use_pixman) {

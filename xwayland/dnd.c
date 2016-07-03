@@ -234,10 +234,10 @@ weston_wm_handle_dnd_event(struct weston_wm *wm,
 		weston_log("XdndSelection owner: %d!\n",
 			   xfixes_selection_notify->owner);
 
-		if (xfixes_selection_notify->owner != XCB_WINDOW_NONE)
-			weston_dnd_start(wm, xfixes_selection_notify->owner);
-		else
-			weston_dnd_stop(wm);
+// 		if (xfixes_selection_notify->owner != XCB_WINDOW_NONE)
+// 			weston_dnd_start(wm, xfixes_selection_notify->owner);
+// 		else
+// 			weston_dnd_stop(wm);
 
 		return 1;
 	}
@@ -245,7 +245,7 @@ weston_wm_handle_dnd_event(struct weston_wm *wm,
 	switch (EVENT_TYPE(event)) {
 	case XCB_CLIENT_MESSAGE:
 		if (client_message->type == wm->atom.xdnd_enter) {
-			handle_enter(wm, client_message);
+// 			handle_enter(wm, client_message);
 			return 1;
 		} else if (client_message->type == wm->atom.xdnd_leave) {
 			weston_log("got leave!\n");

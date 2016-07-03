@@ -118,6 +118,10 @@ struct weston_shell_interface {
 	void (*set_maximized)(struct shell_surface *shsurf);
 	void (*set_pid)(struct shell_surface *shsurf, pid_t pid);
 	void (*get_output_work_area)(void *shell, struct weston_output *output, pixman_rectangle32_t *area);
+	void (*set_class)(struct shell_surface *shsurf,
+			  const char *value);
+	void (*set_id)(struct shell_surface *shsurf,
+		       const char *id);
 };
 
 struct weston_animation {

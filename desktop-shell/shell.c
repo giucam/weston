@@ -6693,6 +6693,11 @@ handle_seat_created(struct wl_listener *listener, void *data)
 	create_shell_seat(seat);
 }
 
+static void
+dummy(struct shell_surface *s, const char *c)
+{
+}
+
 WL_EXPORT int
 module_init(struct weston_compositor *ec,
 	    int *argc, char *argv[])
@@ -6731,6 +6736,8 @@ module_init(struct weston_compositor *ec,
 	ec->shell_interface.set_maximized = shell_interface_set_maximized;
 	ec->shell_interface.set_pid = set_pid;
 	ec->shell_interface.get_output_work_area = get_output_work_area;
+	ec->shell_interface.set_id = dummy;
+	ec->shell_interface.set_class = dummy;
 
 	weston_layer_init(&shell->fullscreen_layer, &ec->cursor_layer.link);
 	weston_layer_init(&shell->panel_layer, &shell->fullscreen_layer.link);
